@@ -897,13 +897,56 @@ class Orchestrator:
                     groups=groups,
                     complaint=f"lane owns globs overlapped: {overlaps}")
                 overlaps = self._check_overlaps(lanes)
-                if overlaps and not self._ask_human(
-                        "plan-fix",
-                        f"fix-wave lanes overlap: {overlaps}\n"
-                        "approve to proceed anyway"):
-                    raise GauntletError(
-                        f"fix-wave planner could not produce orthogonal lanes: "
-                        f"{overlaps}")
+                if overlaps:
+                    if self.auto or not self._ask_human(
+                            "plan-fix",
+                            f"fix-wave lanes overlap: {overlaps}\n"
+                            "coalesce overlapping lanes automatically"):
+                        # Auto-coalesce overlapping lanes into unified orthogonal lanes
+                        files = worktrees.tracked_files(self.git, self.repo_path)
+                        merged = list(lanes)
+                        changed = True
+                        while changed:
+                            changed = False
+                            ovs = worktrees.find_overlaps(merged, files)
+                            if not ovs:
+                                break
+                            id_a, id_b, _, _ = ovs[0]
+                            idx_a = next(i for i, l in enumerate(merged) if (l.id if hasattr(l, "id") else l.get("id")) == id_a)
+                            idx_b = next(i for i, l in enumerate(merged) if (l.id if hasattr(l, "id") else l.get("id")) == id_b)
+                            la, lb = merged[idx_a], merged[idx_b]
+                            owns_a = list(la.owns if hasattr(la, "owns") else la.get("owns", []))
+                            owns_b = list(lb.owns if hasattr(lb, "owns") else lb.get("owns", []))
+                            addr_a = list(la.addresses if hasattr(la, "addresses") else la.get("addresses", []))
+                            addr_b = list(lb.addresses if hasattr(lb, "addresses") else lb.get("addresses", []))
+                            tests_a = list(la.tests if hasattr(la, "tests") else la.get("tests", []))
+                            tests_b = list(lb.tests if hasattr(lb, "tests") else lb.get("tests", []))
+                            brief_a = la.brief if hasattr(la, "brief") else la.get("brief", "")
+                            brief_b = lb.brief if hasattr(lb, "brief") else lb.get("brief", "")
+                            
+                            combined_owns = list(dict.fromkeys(owns_a + owns_b))
+                            combined_addr = list(dict.fromkeys(addr_a + addr_b))
+                            combined_tests = list(dict.fromkeys(tests_a + tests_b))
+                            combined_brief = f"{brief_a}\nAlso: {brief_b}" if brief_a != brief_b else brief_a
+                            
+                            new_lane = statemachine.LaneState(
+                                id=id_a,
+                                owns=combined_owns,
+                                forbidden=[],
+                                tests=combined_tests,
+                                brief=combined_brief,
+                                addresses=combined_addr
+                            )
+                            merged.pop(max(idx_a, idx_b))
+                            merged.pop(min(idx_a, idx_b))
+                            merged.insert(min(idx_a, idx_b), new_lane)
+                            changed = True
+                        for idx, lane in enumerate(merged):
+                            if hasattr(lane, "id"):
+                                lane.id = f"L{idx + 1}"
+                            else:
+                                lane["id"] = f"L{idx + 1}"
+                        lanes = merged
         self.state.lanes = lanes
         self.report.section(
             f"PLAN_FIX wave {self.state.wave}",
