@@ -184,6 +184,14 @@ def rebase_onto(git: Git, wt, onto: str) -> None:
     git.run(["rebase", onto], cwd=wt)
 
 
+def is_ancestor(git: Git, repo, ancestor: str, commit: str) -> bool:
+    try:
+        git.run(["merge-base", "--is-ancestor", ancestor, commit], cwd=repo, mutating=False)
+        return True
+    except Exception:
+        return False
+
+
 def ff_merge(git: Git, repo, branch: str) -> None:
     git.run(["merge", "--ff-only", branch], cwd=repo)
 

@@ -1081,7 +1081,11 @@ class Orchestrator:
                 or head == self.state.base_commit):
             final = "READY_NO_CHANGE"
         else:
-            worktrees.rebase_onto(self.git, self.integration_wt(), target)
+            if not worktrees.is_ancestor(self.git, repo, target, branch):
+                try:
+                    worktrees.rebase_onto(self.git, self.integration_wt(), target)
+                except Exception:
+                    self.git.run(["merge", "--no-edit", target], cwd=self.integration_wt())
             results = gates_mod.run_gates(
                 self.state.gates, cwd=self.integration_wt(),
                 out_dir=self.run_dir / "outputs", dry_run=self.dry_run,
