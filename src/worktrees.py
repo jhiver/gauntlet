@@ -295,10 +295,16 @@ def find_overlaps(lanes, repo_files=()) -> list[tuple[str, str, str, str]]:
     overlaps = []
     for i in range(len(lanes)):
         for j in range(i + 1, len(lanes)):
-            for ga in lanes[i].owns:
-                for gb in lanes[j].owns:
+            lane_a = lanes[i]
+            lane_b = lanes[j]
+            owns_a = lane_a.owns if hasattr(lane_a, "owns") else lane_a.get("owns", [])
+            owns_b = lane_b.owns if hasattr(lane_b, "owns") else lane_b.get("owns", [])
+            id_a = lane_a.id if hasattr(lane_a, "id") else lane_a.get("id", f"L{i+1}")
+            id_b = lane_b.id if hasattr(lane_b, "id") else lane_b.get("id", f"L{j+1}")
+            for ga in owns_a:
+                for gb in owns_b:
                     if globs_may_overlap(ga, gb, repo_files):
-                        overlaps.append((lanes[i].id, lanes[j].id, ga, gb))
+                        overlaps.append((id_a, id_b, ga, gb))
     return overlaps
 
 
