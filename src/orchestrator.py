@@ -853,12 +853,12 @@ class Orchestrator:
                 f"after {self.state.wave} fix wave(s); trajectory "
                 f"{trajectory} did not beat its own best round.\n"
                 "approve to grant one more fix wave anyway")
-            if (policy["on_wave_cap"] != "checkpoint"
+            if not self.auto and (policy["on_wave_cap"] != "checkpoint"
                     or not self._ask_human("wave-cap", context)):
                 raise GauntletError(
                     f"convergence stalled: {len(blocking)} blocking group(s) "
                     f"left, trajectory {trajectory}", kind)
-            self.log("director granted one more fix wave despite the stall")
+            self.log("auto mode or director granted one more fix wave despite the stall")
         self.state.wave += 1
         self._pending_groups = [
             {"root_cause": g.root_cause, "verdict": g.verdict, "fix": g.fix,
