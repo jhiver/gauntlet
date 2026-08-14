@@ -248,3 +248,24 @@ class ReviewerCapsuleTest(unittest.TestCase):
         text = capsules.reviewer(_mission(), wave=0, run_id="RUN",
                                  diff_path="/run/reviews/diff-w0.patch")
         self.assertIn("/run/reviews/diff-w0.patch", text)
+
+
+class ProtocolFidelityTest(unittest.TestCase):
+    """The canonical protocol (gauntlet-loop SKILL.md) requires the verbatim
+    reviewer stance and the judge action rule inside the capsules."""
+
+    def test_reviewer_capsule_starts_with_verbatim_stance(self):
+        text = capsules.reviewer(_mission(), wave=0, run_id="RUN")
+        self.assertIn("you HATE what you are seeing", text)
+        self.assertIn("Saint-Exupéry", text)
+        stance = text.index("You are a senior dev")
+        safety = text.index("## Safety")
+        self.assertLess(stance, safety)  # the prompt starts with the stance
+
+    def test_judge_capsule_carries_action_rule_and_boundaries(self):
+        text = capsules.judge(_mission(), wave=0, run_id="RUN",
+                              review_json='{"groups": []}')
+        self.assertIn("FIX = justified AND aligned AND (", text)
+        self.assertIn("REDESIGN", text)
+        self.assertIn("REPORT_ONLY", text)
+        self.assertIn("never add a compensating layer", text)

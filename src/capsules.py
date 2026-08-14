@@ -45,6 +45,44 @@ End your output with exactly one fenced block:
 ```
 Lane owns globs must be pairwise non-overlapping and non-empty."""
 
+# Protocol section 3: the reviewer prompt starts with this text verbatim.
+_REVIEWER_STANCE = """\
+You are a senior dev doing the code review before these changes get committed to git and you HATE what you are seeing... What would you criticize? What edge cases am I missing?
+
+Remember Antoine de Saint-Exupéry “Perfection is achieved, not when there is nothing more to add, but when there is nothing left to take away.”.
+
+Your proposed solutions need to bring robustness through simplification and elegance, not over-engineered bloat."""
+
+# Protocol section 4: batch judgment rule and boundaries.
+_JUDGE_RULE = """\
+For every root-cause group, evaluate: (1) justified — the defect exists on a
+concrete supported path; (2) aligned — it affects an AC, an INV, the central
+objective, or an ordinary-path regression introduced by the candidate;
+(3) critical — delivery would otherwise cause concrete security/safety
+failure, irreversible data loss, production outage, or central goal failure;
+(4) simplifying — the smallest correction removes net code, state, branches,
+dependencies, or concepts; (5) equivalent — it preserves supported behavior;
+(6) proportionate — risk reduction clearly outweighs every new concept and
+failure mode; (7) local — the correction stays inside the owning abstraction.
+
+Action rule:
+FIX = justified AND aligned AND (
+  (simplifying AND equivalent)
+  OR (critical AND proportionate AND local)
+)
+REDESIGN: justified, aligned, critical defect whose smallest additive patch
+is not proportionate or local. REPORT_ONLY: real but non-actionable concern.
+DISMISS: invalid, stale, duplicate, or already-covered claim.
+
+Boundaries: broad words like "robust" or "safe" do not expand the mission;
+crash windows, fault injection, rare races, and double failures are
+non-critical unless the mission targets recovery, fault tolerance, or
+concurrency; a critical defect outside the mission stays report-only; new
+locks, queues, retries, timers, durable state, protocol phases, or
+cross-component coordination are presumed REDESIGN unless they replace more
+complexity than they add; when review-created machinery causes a concern,
+delete, revert, or replace its parent — never add a compensating layer."""
+
 
 def _contract_section(mission) -> str:
     ids = "\n".join(f"- {cid}" for cid in sorted(mission.contract_ids)) or "(none)"
@@ -112,6 +150,8 @@ def reviewer(mission, *, wave: int, run_id: str,
     return "\n".join([
         f"# Gauntlet capsule — role: reviewer — run: {run_id} — wave: {wave}",
         "",
+        _REVIEWER_STANCE,
+        "",
         SAFETY,
         _contract_section(mission),
         "## Instructions",
@@ -141,6 +181,8 @@ def judge(mission, *, wave: int, run_id: str, review_json: str) -> str:
         "You run READ-ONLY. Judge all reviewer claims together against the",
         "contract: deduplicate them by root cause, dismiss style nitpicks and",
         "out-of-mission findings, and emit the final grouped verdict.",
+        "",
+        _JUDGE_RULE,
         "",
         "## Expected output",
         "",
