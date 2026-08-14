@@ -319,6 +319,7 @@ _ALWAYS_IGNORED_PATHS = {
     ".pw-browsers",
     ".chrome-home",
     ".gauntlet",
+    "gauntlet.toml",
     ".DS_Store",
 }
 
@@ -342,7 +343,7 @@ def checkout_status(git: Git, repo) -> list[str]:
 
 
 def checkout_drift(before: list[str], after: list[str],
-                   ignore_prefixes=(".missions/",)) -> list[str]:
+                   ignore_prefixes=(".missions/", "gauntlet.toml")) -> list[str]:
     """INSPECT check: paths that appeared in a checkout while lanes ran,
     excluding run-local noise. Non-empty means a worker escaped its
     worktree into that checkout (containment breach)."""
