@@ -556,9 +556,13 @@ class Orchestrator:
                 path=sub_mission_path)
             
             # Check if this sub-mission was already started or completed
-            date = time.strftime("%Y%m%d")
+            run_date = self.state.run_id.split("-")[0] if self.state.run_id and len(self.state.run_id.split("-")[0]) == 8 and self.state.run_id.split("-")[0].isdigit() else time.strftime("%Y%m%d")
             missions_root = Path(self.mission.repos[0].path) / ".missions"
-            expected_run_dir = missions_root / f"{date}-{sub_mission.slug}"
+            expected_run_dir = missions_root / f"{run_date}-{sub_mission.slug}"
+            if not expected_run_dir.exists():
+                today_dir = missions_root / f"{time.strftime('%Y%m%d')}-{sub_mission.slug}"
+                if today_dir.exists():
+                    expected_run_dir = today_dir
             resume_dir = None
             if (expected_run_dir / "state.json").exists():
                 try:
