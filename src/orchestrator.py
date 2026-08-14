@@ -400,10 +400,17 @@ class Orchestrator:
                                      wave=self.state.wave,
                                      run_id=self.state.run_id, role=role))
             try:
-                self._run_role(role, capsule, self.lane_wt(lane.id),
-                               write=True, lane_id=lane.id)
+                outcome = self._run_role(role, capsule, self.lane_wt(lane.id),
+                                         write=True, lane_id=lane.id)
                 lane.status = "done"
                 lane.detail = ""
+                try:  # validation already passed in _run_role; keep claims
+                    report = verdicts.validate_report(
+                        verdicts.extract_block_from_file(
+                            outcome.result.output_path, "report"))
+                    lane.claimed = list(report.get("files_changed", []))
+                except verdicts.VerdictError:
+                    lane.claimed = []
             except (ChainExhausted, AuthAbort) as exc:
                 lane.status = "failed"
                 lane.detail = str(exc)
@@ -411,6 +418,10 @@ class Orchestrator:
                 lane.status = "failed"
                 lane.detail = f"unexpected: {exc}"
             self._save()
+
+        # Snapshot the main checkout before lanes run: a worker escaping its
+        # worktree shows up here (INSPECT compares).
+        self._main_before = worktrees.checkout_status(self.git, self.repo_path)
 
         threads = [threading.Thread(target=worker, args=(lane,),
                                     name=f"lane-{lane.id}") for lane in todo]
@@ -430,6 +441,13 @@ class Orchestrator:
         self._transition("INSPECT")
 
     def _phase_inspect(self) -> None:
+        drift = worktrees.checkout_drift(
+            getattr(self, "_main_before", []),
+            worktrees.checkout_status(self.git, self.repo_path))
+        if drift:
+            raise GauntletError(
+                "SAFETY: main checkout modified while lanes ran "
+                "(worker escaped its worktree): " + ", ".join(drift))
         rejected = []
         for lane in self.state.lanes:
             if lane.status != "done":
@@ -438,6 +456,8 @@ class Orchestrator:
                 self.git, self.lane_wt(lane.id), self.state.base_commit)
             violations = worktrees.check_lane_diff(
                 lane.changed, lane.owns, lane.forbidden)
+            violations += worktrees.check_claimed_vs_diff(
+                lane.claimed, lane.changed)
             if violations:
                 lane.status = "rejected"  # automatic, no debate
                 lane.detail = "; ".join(violations)
@@ -501,10 +521,20 @@ class Orchestrator:
         self._transition("REVIEW")
 
     def _phase_review(self) -> None:
+        diff_path = self.run_dir / "reviews" / f"diff-w{self.state.wave}.patch"
+        diff_path.parent.mkdir(parents=True, exist_ok=True)
+        wt = self.integration_wt()
+        if wt.is_dir():
+            diff = self.git.run(["diff", self.state.base_commit], cwd=wt,
+                                mutating=False) or "(empty diff)\n"
+        else:  # dry-run: the integration worktree was never created
+            diff = "(integration worktree unavailable — dry-run)\n"
+        diff_path.write_text(diff, encoding="utf-8")
         capsule = self._write_capsule(
             f"reviewer-w{self.state.wave}",
             capsules.reviewer(self.mission, wave=self.state.wave,
-                              run_id=self.state.run_id))
+                              run_id=self.state.run_id,
+                              diff_path=str(diff_path)))
         outcome = self._run_role("reviewer", capsule, self.work_wt(),
                                  write=False)
         data = verdicts.extract_block_from_file(outcome.result.output_path,

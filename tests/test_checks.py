@@ -84,3 +84,30 @@ class LaneDiffCheckTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ContainmentCheckTest(unittest.TestCase):
+    def test_drift_flags_new_paths_outside_missions(self):
+        from src.worktrees import checkout_drift
+        before = [".missions/run/state.json", "src/old.py"]
+        after = [".missions/run/state.json", ".missions/run/report.md",
+                 "src/old.py", "src/example/hello.py"]
+        self.assertEqual(checkout_drift(before, after),
+                         ["src/example/hello.py"])
+
+    def test_drift_empty_when_only_missions_noise(self):
+        from src.worktrees import checkout_drift
+        self.assertEqual(checkout_drift(["a.py"], [".missions/r/x", "a.py"]),
+                         [])
+
+    def test_claimed_file_missing_from_diff_is_flagged(self):
+        from src.worktrees import check_claimed_vs_diff
+        violations = check_claimed_vs_diff(
+            ["src/example/hello.py"], [])
+        self.assertEqual(len(violations), 1)
+        self.assertIn("hello.py", violations[0])
+
+    def test_claimed_subset_of_diff_passes(self):
+        from src.worktrees import check_claimed_vs_diff
+        self.assertEqual(check_claimed_vs_diff(["a.py"], ["a.py", "b.py"]),
+                         [])

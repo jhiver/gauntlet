@@ -125,5 +125,126 @@ class HumanAdapterTest(unittest.TestCase):
                          ["src/example/**"])
 
 
+class CmdAdapterTest(unittest.TestCase):
+    def _argv(self, write):
+        from src.adapters.cmd import CmdAdapter
+        return CmdAdapter("cmd", {"default_model": "m"}).build_argv(
+            capsule=Path("/c.md"), worktree=Path("/wt"), write=write,
+            model=None, effort="medium")
+
+    def test_write_uses_yolo_not_auto_accept(self):
+        argv = self._argv(write=True)
+        self.assertIn("--yolo", argv)
+        self.assertNotIn("--auto-accept", argv)
+
+    def test_read_only_uses_plan_mode(self):
+        argv = self._argv(write=False)
+        self.assertIn("--permission-mode", argv)
+        self.assertIn("plan", argv)
+        self.assertNotIn("--yolo", argv)
+
+
+class JsonlStreamFinalizeTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.dir = Path(self.tmp.name)
+
+    def _finalize(self, content: str) -> str:
+        from src.adapters.base import SubprocessAdapter
+        out = self.dir / "x.out"
+        out.write_text(content, encoding="utf-8")
+        SubprocessAdapter._finalize_stream(out)
+        self.assertTrue((self.dir / "x.raw").is_file())
+        return out.read_text(encoding="utf-8")
+
+    def test_fenced_block_inside_json_strings_becomes_extractable(self):
+        # Real newlines here: json.dumps escapes them as \n, and the
+        # finalizer's json.loads must restore them as literal lines.
+        payload = {"files_changed": [], "tests_run": [],
+                   "tests_passed": True, "partial": False, "notes": ""}
+        block = f"```gauntlet-report\n{json.dumps(payload)}\n```"
+        lines = [
+            json.dumps({"role": "assistant", "content": [
+                {"type": "text", "text": "working…"}]}),
+            "plain non-json line",
+            json.dumps({"type": "result", "finalText":
+                        f"Done.\n\n{block}"}),
+        ]
+        text = self._finalize("\n".join(lines) + "\n")
+        report = verdicts.validate_report(
+            verdicts.extract_block(text, "report"))
+        self.assertEqual(report["files_changed"], [])
+        self.assertIn("plain non-json line", text)
+
+    def test_empty_file(self):
+        self.assertEqual(self._finalize(""), "\n")
+
+
 if __name__ == "__main__":
     unittest.main()
+
+
+class AgyAdapterStagingTest(unittest.TestCase):
+    """The capsule must be staged inside the lane worktree (and cleaned up):
+    a capsule in the main checkout made agy write outside its worktree."""
+
+    def test_capsule_staged_in_worktree_and_cleaned(self):
+        from src.adapters import base
+        from src.adapters.agy import AgyAdapter
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        d = Path(tmp.name)
+        wt = d / "wt"
+        wt.mkdir()
+        capsule = d / "capsule.md"
+        capsule.write_text("mission", encoding="utf-8")
+        seen = {}
+
+        def fake_run(self, *, capsule, worktree, write, model, effort,
+                     hard_timeout_s, idle_timeout_s, out_dir):
+            seen["capsule"] = Path(capsule)
+            seen["existed_during_run"] = Path(capsule).is_file()
+            return base.RunResult(base.FailureKind.NONE, 0, Path(capsule))
+
+        original = base.SubprocessAdapter.run
+        base.SubprocessAdapter.run = fake_run
+        try:
+            AgyAdapter("agy", {"launcher": "/nonexistent"}).run(
+                capsule=capsule, worktree=wt, write=True, model=None,
+                effort=None, hard_timeout_s=1, idle_timeout_s=None,
+                out_dir=d / "out")
+        finally:
+            base.SubprocessAdapter.run = original
+        self.assertEqual(seen["capsule"], wt / ".gauntlet" / "capsule.md")
+        self.assertTrue(seen["existed_during_run"])
+        self.assertFalse((wt / ".gauntlet").exists())
+
+
+class ReasonixAdapterTest(unittest.TestCase):
+    def _argv(self, write):
+        from src.adapters.reasonix import ReasonixAdapter
+        return ReasonixAdapter("reasonix", {}).build_argv(
+            capsule=Path("/c.md"), worktree=Path("/wt"), write=write,
+            model="deepseek-v4-pro", effort=None)
+
+    def test_print_mode_with_stream_json(self):
+        argv = self._argv(write=False)
+        self.assertIn("-p", argv)
+        self.assertIn("stream-json", argv)
+        self.assertNotIn("--events-jsonl", argv)
+
+    def test_read_only_denies_write_bash_git(self):
+        argv = self._argv(write=False)
+        idx = argv.index("--allowed-tools")
+        self.assertEqual(argv[idx + 1], "deny:write,deny:bash,deny:git")
+
+    def test_write_mode_has_no_deny_rules(self):
+        self.assertNotIn("--allowed-tools", self._argv(write=True))
+
+
+class ReviewerCapsuleTest(unittest.TestCase):
+    def test_diff_path_is_referenced(self):
+        text = capsules.reviewer(_mission(), wave=0, run_id="RUN",
+                                 diff_path="/run/reviews/diff-w0.patch")
+        self.assertIn("/run/reviews/diff-w0.patch", text)

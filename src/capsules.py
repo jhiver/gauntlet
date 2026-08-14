@@ -94,7 +94,21 @@ def implementer(mission, lane, *, wave: int, run_id: str,
     return "\n".join(parts) + "\n"
 
 
-def reviewer(mission, *, wave: int, run_id: str) -> str:
+def reviewer(mission, *, wave: int, run_id: str,
+             diff_path: str | None = None) -> str:
+    instructions = [
+        "Review the integrated changes in this worktree against the contract.",
+    ]
+    if diff_path:
+        instructions.append(
+            f"The full base-to-candidate diff is at {diff_path} — read it "
+            "first; consult worktree files for surrounding context.")
+    instructions += [
+        "You run READ-ONLY: do not modify any file. One global review of the",
+        "whole diff; report only defects backed by evidence, each mapped to a",
+        "contract ID where applicable. Style nitpicks and out-of-mission",
+        "findings are not FIX claims.",
+    ]
     return "\n".join([
         f"# Gauntlet capsule — role: reviewer — run: {run_id} — wave: {wave}",
         "",
@@ -102,11 +116,7 @@ def reviewer(mission, *, wave: int, run_id: str) -> str:
         _contract_section(mission),
         "## Instructions",
         "",
-        "Review the integrated changes in this worktree against the contract.",
-        "You run READ-ONLY: do not modify any file. One global review of the",
-        "whole diff; report only defects backed by evidence, each mapped to a",
-        "contract ID where applicable. Style nitpicks and out-of-mission",
-        "findings are not FIX claims.",
+        *instructions,
         "",
         "## Expected output",
         "",

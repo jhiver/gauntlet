@@ -9,6 +9,8 @@ from src.adapters.base import SubprocessAdapter
 
 
 class CmdAdapter(SubprocessAdapter):
+    jsonl_output = True  # --output-format json emits an NDJSON event stream
+
     def build_argv(self, *, capsule: Path, worktree: Path, write: bool,
                    model: str | None, effort: str | None) -> list[str]:
         argv = ["cmd", "-p",
@@ -20,6 +22,8 @@ class CmdAdapter(SubprocessAdapter):
             argv += ["--model", chosen]
         if effort:
             argv += ["--effort", effort]
-        # Reviewers/judges run read-only; only write roles get --auto-accept.
-        argv += ["--auto-accept"] if write else ["--permission-mode", "plan"]
+        # In -p mode, tool use (file writes, shell) is gated unless --yolo;
+        # --auto-accept is NOT sufficient. Reviewers/judges stay read-only
+        # via plan mode.
+        argv += ["--yolo"] if write else ["--permission-mode", "plan"]
         return argv

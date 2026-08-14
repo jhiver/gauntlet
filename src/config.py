@@ -13,8 +13,8 @@ from pathlib import Path
 ADAPTER_NAMES = {"agy", "cmd", "kimi", "reasonix", "human", "echo"}
 ROLES = ("implementer", "fixer", "reviewer", "judge", "planner", "director")
 WRITE_ROLES = {"implementer", "fixer"}
-FALLBACK_ACTIONS = {"next_and_break", "break", "backoff_retry_then_next",
-                    "retry_once_then_next"}
+FALLBACK_ACTIONS = {"next", "next_and_break", "break",
+                    "backoff_retry_then_next", "retry_once_then_next"}
 
 BUILTIN_DEFAULTS = {
     "harnesses": {
@@ -40,6 +40,7 @@ BUILTIN_DEFAULTS = {
         "on_quota": "next_and_break",
         "on_auth": "break",
         "on_rate_limit": "backoff_retry_then_next",
+        "on_model_unavailable": "next",
         "on_timeout": "retry_once_then_next",
         "on_crash": "retry_once_then_next",
         "on_invalid_output": "retry_once_then_next",

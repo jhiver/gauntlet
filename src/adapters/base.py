@@ -22,6 +22,7 @@ class FailureKind(Enum):
     QUOTA_EXHAUSTED = "quota"
     RATE_LIMITED = "rate_limit"
     AUTH_EXPIRED = "auth"
+    MODEL_UNAVAILABLE = "model_unavailable"  # model not in plan / removed
     TIMEOUT_IDLE = "timeout_idle"
     TIMEOUT_HARD = "timeout_hard"
     CRASH = "crash"
@@ -62,7 +63,16 @@ class HarnessAdapter(ABC):
 class SubprocessAdapter(HarnessAdapter):
     """Base for CLI harnesses: builds argv, tees stdout/stderr to files under
     out_dir, enforces hard/idle timeouts (idle = no stdout mtime change), and
-    classifies failures from configured stderr regexes, then exit codes."""
+    classifies failures from configured stderr regexes, then exit codes.
+
+    Adapters whose harness emits a JSONL event stream (jsonl_output = True)
+    get their stdout post-processed after exit: the raw stream is kept in
+    <stem>.raw and <stem>.out receives every string payload extracted from
+    the JSON lines, so fenced gauntlet-* blocks embedded in escaped JSON
+    strings become literal and parseable.
+    """
+
+    jsonl_output = False
 
     def __init__(self, name: str, cfg: dict | None = None):
         super().__init__(name, cfg)
@@ -73,6 +83,8 @@ class SubprocessAdapter(HarnessAdapter):
             FailureKind.QUOTA_EXHAUSTED: self._compile(pats.get("quota", [])),
             FailureKind.AUTH_EXPIRED: self._compile(pats.get("auth", [])),
             FailureKind.RATE_LIMITED: self._compile(pats.get("rate_limit", [])),
+            FailureKind.MODEL_UNAVAILABLE:
+                self._compile(pats.get("model_unavailable", [])),
         }
         self._counter = 0
 
@@ -113,6 +125,8 @@ class SubprocessAdapter(HarnessAdapter):
             out_path.write_text("")
             return RunResult(FailureKind.CRASH, None, out_path,
                              f"harness launch failed: {exc}")
+        if self.jsonl_output:
+            self._finalize_stream(out_path)
         if timeout is not None:
             return RunResult(timeout, None, out_path, self._tail(err_path))
         tail = self._tail(err_path)
@@ -159,6 +173,44 @@ class SubprocessAdapter(HarnessAdapter):
         except FileNotFoundError:
             return ""
         return data[-n:].decode("utf-8", "replace")
+
+    @staticmethod
+    def _finalize_stream(out_path: Path) -> None:
+        """Move the raw JSONL stream to <stem>.raw and rewrite <stem>.out as
+        plain text: every string payload of each JSON line (document order),
+        non-JSON lines passed through. Fenced gauntlet-* blocks travel inside
+        escaped JSON strings (e.g. cmd's final `result.finalText`), so this
+        makes them literal and extractable by verdicts.py."""
+        import json
+        raw_path = out_path.with_suffix(".raw")
+        try:
+            out_path.rename(raw_path)
+        except FileNotFoundError:
+            return
+
+        def strings(node, sink):
+            if isinstance(node, str):
+                sink.append(node)
+            elif isinstance(node, dict):
+                for value in node.values():
+                    strings(value, sink)
+            elif isinstance(node, list):
+                for item in node:
+                    strings(item, sink)
+
+        collected: list[str] = []
+        with open(raw_path, encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                try:
+                    node = json.loads(stripped)
+                except json.JSONDecodeError:
+                    collected.append(line.rstrip("\n"))
+                else:
+                    strings(node, collected)
+        out_path.write_text("\n".join(collected) + "\n", encoding="utf-8")
 
     def _classify(self, stderr_tail: str):
         for kind, patterns in self._compiled.items():

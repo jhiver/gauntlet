@@ -189,3 +189,32 @@ class FallbackMatrixTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ModelUnavailableTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.out_dir = Path(self.tmp.name)
+
+    def test_model_unavailable_goes_next_without_breaker_or_retry(self):
+        # A 403 MODEL_NOT_IN_PLAN is model-scoped: retrying is pointless and
+        # tripping the harness breaker would kill other models on the same CLI.
+        policy = dict(POLICY, on_model_unavailable="next")
+        a = MockAdapter("a", [FailureKind.MODEL_UNAVAILABLE])
+        b = MockAdapter("b", [])
+        health = HarnessHealth()
+
+        def run_once(link, attempt):
+            adapter = {"a": a, "b": b}[link["harness"]]
+            return adapter.run(
+                capsule=Path("capsule.md"), worktree=self.out_dir,
+                write=False, model=None, effort=None, hard_timeout_s=5,
+                idle_timeout_s=None, out_dir=self.out_dir)
+
+        outcome = execute_chain(
+            role="tester", links=[{"harness": "a"}, {"harness": "b"}],
+            health=health, policy=policy, run_once=run_once, auto=True)
+        self.assertEqual(outcome.harness, "b")
+        self.assertEqual(a.calls, 1)          # no retry
+        self.assertFalse(health.is_open("a"))  # no breaker

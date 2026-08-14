@@ -9,6 +9,8 @@ from src.adapters.base import SubprocessAdapter
 
 
 class KimiAdapter(SubprocessAdapter):
+    jsonl_output = True  # --output-format stream-json emits JSONL
+
     def build_argv(self, *, capsule: Path, worktree: Path, write: bool,
                    model: str | None, effort: str | None) -> list[str]:
         argv = ["kimi", "-p",

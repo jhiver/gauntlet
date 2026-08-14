@@ -34,6 +34,7 @@ FAILURE_POLICY_KEY = {
     FailureKind.QUOTA_EXHAUSTED: "on_quota",
     FailureKind.AUTH_EXPIRED: "on_auth",
     FailureKind.RATE_LIMITED: "on_rate_limit",
+    FailureKind.MODEL_UNAVAILABLE: "on_model_unavailable",
     FailureKind.TIMEOUT_IDLE: "on_timeout",
     FailureKind.TIMEOUT_HARD: "on_timeout",
     FailureKind.CRASH: "on_crash",

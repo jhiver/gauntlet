@@ -265,3 +265,39 @@ def check_lane_diff(changed: list[str], owns: list[str],
         elif not any(glob_matches(p, path) for p in owns):
             violations.append(f"{path} (outside lane owns)")
     return violations
+
+
+def checkout_status(git: Git, repo) -> list[str]:
+    """Paths with uncommitted changes in a checkout (porcelain -uall)."""
+    out = git.run(["status", "--porcelain", "-uall"], cwd=repo,
+                  mutating=False) or ""
+    paths = []
+    for line in out.splitlines():
+        if len(line) < 4:
+            continue
+        path = line[3:]
+        if " -> " in path:
+            path = path.split(" -> ", 1)[1]
+        paths.append(path.strip('"').rstrip("/"))
+    return sorted(paths)
+
+
+def checkout_drift(before: list[str], after: list[str],
+                   ignore_prefixes=(".missions/",)) -> list[str]:
+    """INSPECT check: paths that appeared in a checkout while lanes ran,
+    excluding run-local noise. Non-empty means a worker escaped its
+    worktree into that checkout (containment breach)."""
+    ignored = {p for p in before
+               if any(p.startswith(pre) for pre in ignore_prefixes)}
+    base = set(before) - ignored
+    now = {p for p in after
+           if not any(p.startswith(pre) for pre in ignore_prefixes)}
+    return sorted(now - base)
+
+
+def check_claimed_vs_diff(claimed: list[str], changed: list[str]) -> list[str]:
+    """INSPECT check: every file the worker's gauntlet-report claims must
+    appear in the lane diff. A miss means the write landed elsewhere."""
+    changed_set = set(changed)
+    return [f"{path} (claimed by worker but absent from lane diff)"
+            for path in claimed if path not in changed_set]

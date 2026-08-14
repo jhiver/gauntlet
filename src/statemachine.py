@@ -33,6 +33,7 @@ class LaneState:
     status: str = "pending"
     detail: str = ""
     changed: list[str] = field(default_factory=list)
+    claimed: list[str] = field(default_factory=list)
 
 
 @dataclass

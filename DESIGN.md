@@ -109,6 +109,9 @@ lane_timeout_s = 5400               # implementer/fixer wall clock cap
 on_quota = "next_and_break"         # + run-level circuit breaker
 on_auth = "break"                   # circuit breaker + alert, no chain drain
 on_rate_limit = "backoff_retry_then_next"   # backoff 30s, 1 retry
+on_model_unavailable = "next"       # model-scoped (e.g. not in plan): no
+                                    # retry, no breaker — other models on the
+                                    # same harness stay usable
 on_timeout = "retry_once_then_next"
 on_crash = "retry_once_then_next"
 on_invalid_output = "retry_once_then_next"
@@ -128,6 +131,9 @@ errors, not runtime surprises.
   recut). Its output is a `gauntlet-plan` JSON block validated like verdicts.
 - `director` is consulted at configured checkpoints; default harness `human`.
   With `--auto`, checkpoints auto-approve.
+- Before each REVIEW, the orchestrator writes the full base-to-candidate
+  diff to `reviews/diff-w<N>.patch` and references it in the reviewer
+  capsule, so reviewers do not need shell access to inspect the candidate.
 
 ## Adapter interface (adapters/base.py)
 
@@ -167,6 +173,13 @@ file under `out_dir`; the orchestrator watches mtime — no mtime change for
 use stdout mtime. Classification: adapter applies its configured error
 regexes to the stderr tail, then falls back to exit-code heuristics.
 
+Harnesses emitting a JSONL event stream (cmd `--output-format json`, kimi
+`stream-json`, reasonix `--events-jsonl`) set `jsonl_output = True`: after
+exit, the raw stream is kept in `<stem>.raw` and `<stem>.out` is rewritten
+as plain text (every string payload of each JSON line, in order). Fenced
+`gauntlet-*` blocks travel inside escaped JSON strings (e.g. cmd's final
+`result.finalText`); this rewrite makes them literal and extractable.
+
 ### Concrete harness commands
 
 Short prompt + capsule path, never an inline capsule (long inline prompts
@@ -174,16 +187,25 @@ fail silently on agy). cwd is always the lane worktree.
 
 - **agy**: `bash ~/aios/.reasonix/skills/antigravity-delegation/scripts/agy-delegate
   --kind {implement|review} --complexity {low|medium|high} --mission {capsule}
-  --cwd {worktree} [--write] [--model M] [--timeout T]`
+  --cwd {worktree} [--write] [--model M] [--timeout T]`.
+  The capsule is first staged at `{worktree}/.gauntlet/capsule.md` and removed
+  after the run: the launcher passes `--add-dir <capsule-dir>` to agy, and a
+  capsule living in the main checkout made agy anchor on (and write into) the
+  main checkout instead of the lane worktree.
 - **cmd**: `cmd -p "Execute the mission file at {capsule} and follow it exactly."
   --model M --effort E --no-session --skip-onboarding --no-auto-update
   --output-format json` plus `--permission-mode plan` (read-only) or
-  `--auto-accept` (write). Do NOT use `cmd -w/--worktree` — the orchestrator
-  owns worktrees.
+  `--yolo` (write — in `-p` mode tool use is permission-gated and
+  `--auto-accept` is NOT sufficient). Do NOT use `cmd -w/--worktree` — the
+  orchestrator owns worktrees.
 - **kimi**: `kimi -p "..." --add-dir {worktree} [-y | --auto]
   [--output-format stream-json] [-m M]`
-- **reasonix**: `reasonix run [--model M] [--effort E] --events-jsonl` with
-  the short prompt; read-only enforced via `--allowed-tools` deny rules.
+- **reasonix**: `reasonix -p "..." --output-format stream-json [--model M]
+  [--effort E]`; read-only roles add `--allowed-tools
+  deny:write,deny:bash,deny:git` (the reviewer reads the diff file and
+  worktree files; it needs no shell). Do NOT use `reasonix run
+  --events-jsonl` for output capture: that stream is redacted (kind markers
+  only, no content).
 - **human**: prints the capsule path + what is expected, waits on stdin for
   a decision (`approve`/`reject`, or a pasted verdict JSON block).
 - **echo**: copies the capsule into the output file and emits a canned
@@ -234,7 +256,11 @@ Mechanical checks in code (never delegated to a model):
   (translate globs, test overlap); violation → config error, back to planner
   once, then human.
 - INSPECT: diff of each lane vs base must touch only `owns` paths and no
-  `forbidden` path → automatic lane rejection, no debate.
+  `forbidden` path → automatic lane rejection, no debate. Two containment
+  checks join it: every file the worker's report claims must appear in the
+  lane diff (a miss means the write landed elsewhere), and the main checkout
+  is diffed against its pre-lanes snapshot — any new path outside
+  `.missions/` is a containment breach and blocks the run (`SAFETY`).
 - GATES: run the repo's gate commands once per integrated candidate.
 - Wave counter from `state.json`; exceeding `max_fix_waves` → BLOCKED.
 
