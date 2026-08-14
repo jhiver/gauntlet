@@ -908,12 +908,20 @@ class Orchestrator:
                         changed = True
                         while changed:
                             changed = False
-                            ovs = worktrees.find_overlaps(merged, files)
-                            if not ovs:
+                            # Find first overlapping pair of indices directly
+                            pair = None
+                            for i in range(len(merged)):
+                                for j in range(i + 1, len(merged)):
+                                    owns_i = merged[i].owns if hasattr(merged[i], "owns") else merged[i].get("owns", [])
+                                    owns_j = merged[j].owns if hasattr(merged[j], "owns") else merged[j].get("owns", [])
+                                    if any(worktrees.globs_may_overlap(ga, gb, files) for ga in owns_i for gb in owns_j):
+                                        pair = (i, j)
+                                        break
+                                if pair:
+                                    break
+                            if not pair:
                                 break
-                            id_a, id_b, _, _ = ovs[0]
-                            idx_a = next(i for i, l in enumerate(merged) if (l.id if hasattr(l, "id") else l.get("id")) == id_a)
-                            idx_b = next(i for i, l in enumerate(merged) if (l.id if hasattr(l, "id") else l.get("id")) == id_b)
+                            idx_a, idx_b = pair
                             la, lb = merged[idx_a], merged[idx_b]
                             owns_a = list(la.owns if hasattr(la, "owns") else la.get("owns", []))
                             owns_b = list(lb.owns if hasattr(lb, "owns") else lb.get("owns", []))
@@ -930,7 +938,7 @@ class Orchestrator:
                             combined_brief = f"{brief_a}\nAlso: {brief_b}" if brief_a != brief_b else brief_a
                             
                             new_lane = statemachine.LaneState(
-                                id=id_a,
+                                id=f"L{idx_a + 1}",
                                 owns=combined_owns,
                                 forbidden=[],
                                 tests=combined_tests,
