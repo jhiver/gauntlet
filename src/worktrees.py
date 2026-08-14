@@ -137,7 +137,9 @@ def lane_changed_files(git: Git, wt, base: str) -> list[str]:
         if cleaned in _ALWAYS_IGNORED_PATHS or cleaned.split("/")[0] in _ALWAYS_IGNORED_PATHS:
             continue
         changed.add(cleaned)
-    diff = git.run(["diff", "--name-only", base], cwd=wt, mutating=False) or ""
+    mb = git.run(["merge-base", base, "HEAD"], cwd=wt, mutating=False)
+    diff_target = mb.strip() if mb and mb.strip() else base
+    diff = git.run(["diff", "--name-only", diff_target], cwd=wt, mutating=False) or ""
     for line in diff.splitlines():
         if not line:
             continue

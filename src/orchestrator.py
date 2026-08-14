@@ -607,12 +607,15 @@ class Orchestrator:
         if not todo:
             self._transition("INSPECT")
             return
+        branch_base = (self.state.base_commit
+                       if self.state.wave == 0
+                       else self.integration_branch())
         for lane in todo:  # worktree creation stays serial and idempotent
             wt = self.lane_wt(lane.id)
             if not wt.exists():
                 worktrees.create_worktree(self.git, self.repo_path, wt,
                                           self.lane_branch(lane.id),
-                                          self.state.base_commit)
+                                          branch_base)
             if str(wt) not in self.state.worktrees:
                 self.state.worktrees.append(str(wt))
             if self.lane_branch(lane.id) not in self.state.branches:
