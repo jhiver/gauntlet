@@ -52,7 +52,7 @@ class AgyAdapter(SubprocessAdapter):
             return super().run(capsule=staged, worktree=worktree, write=write,
                                model=model, effort=effort,
                                hard_timeout_s=hard_timeout_s,
-                               idle_timeout_s=idle_timeout_s, out_dir=out_dir)
+                               idle_timeout_s=None, out_dir=out_dir)
         finally:
             shutil.rmtree(staged.parent, ignore_errors=True)
 
