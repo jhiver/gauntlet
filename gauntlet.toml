@@ -1,0 +1,87 @@
+# Gauntlet default configuration.
+# Override per mission with a gauntlet.toml next to the mission file,
+# or per run with --config FILE.
+
+[harnesses.agy]
+adapter = "agy"
+supports_write = true
+default_model = "gemini-3.6-flash-high"
+launcher = "/Users/jhiver/aios/.reasonix/skills/antigravity-delegation/scripts/agy-delegate"
+[harnesses.agy.errors]
+quota = ["quota", "resource_exhausted", "429"]
+auth  = ["unauthorized", "401"]
+
+[harnesses.cmd]
+adapter = "cmd"
+supports_write = true
+default_model = "gpt-5.6-luna"
+[harnesses.cmd.errors]
+quota = ["insufficient[_ ]quota", "credit", "402"]
+auth  = ["unauthorized", "401", "not logged in"]
+
+[harnesses.kimi]
+adapter = "kimi"
+supports_write = true
+[harnesses.kimi.errors]
+quota = ["quota", "429"]
+auth  = ["unauthorized", "401"]
+
+[harnesses.reasonix]
+adapter = "reasonix"
+supports_write = false
+default_model = "deepseek-v4-flash"
+[harnesses.reasonix.errors]
+quota = ["quota", "429"]
+auth  = ["unauthorized", "401"]
+
+# Roles. Every chain implicitly ends with the "human" link.
+
+[roles.implementer]
+chain = [
+  { harness = "agy" },
+  { harness = "cmd", model = "gpt-5.6-luna", effort = "max" },
+  { harness = "kimi" },
+]
+
+[roles.fixer]
+chain = [
+  { harness = "cmd", model = "gpt-5.6-luna", effort = "max" },
+  { harness = "agy" },
+]
+
+[roles.reviewer]
+chain = [
+  { harness = "cmd", model = "gpt-5.6-sol", effort = "medium" },
+  { harness = "reasonix", model = "deepseek-v4-pro" },
+]
+
+[roles.judge]
+chain = [
+  { harness = "cmd", model = "gpt-5.6-sol", effort = "medium" },
+  { harness = "reasonix", model = "deepseek-v4-pro" },
+]
+
+[roles.planner]
+chain = [
+  { harness = "cmd", model = "deepseek-v4-pro" },
+  { harness = "reasonix", model = "deepseek-v4-pro" },
+]
+
+[roles.director]
+chain = [{ harness = "human" }]
+
+[policy]
+checkpoints = ["plan", "deliver"]
+max_fix_waves = 2
+idle_timeout_s = 900
+hard_timeout_s = 2700
+lane_timeout_s = 5400
+
+[fallback]
+on_quota = "next_and_break"
+on_auth = "break"
+on_rate_limit = "backoff_retry_then_next"
+on_timeout = "retry_once_then_next"
+on_crash = "retry_once_then_next"
+on_invalid_output = "retry_once_then_next"
+max_attempts_per_task = 3
