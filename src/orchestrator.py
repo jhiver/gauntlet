@@ -616,14 +616,23 @@ class Orchestrator:
                        else self.integration_branch())
         for lane in todo:  # worktree creation stays serial and idempotent
             wt = self.lane_wt(lane.id)
-            if not wt.exists():
-                worktrees.create_worktree(self.git, self.repo_path, wt,
-                                          self.lane_branch(lane.id),
-                                          branch_base)
+            branch = self.lane_branch(lane.id)
+            if wt.exists():
+                try:
+                    worktrees.remove_worktree(self.git, self.repo_path, wt)
+                except Exception:
+                    pass
+            try:
+                worktrees.delete_branch(self.git, self.repo_path, branch)
+            except Exception:
+                pass
+            worktrees.create_worktree(self.git, self.repo_path, wt,
+                                      branch,
+                                      branch_base)
             if str(wt) not in self.state.worktrees:
                 self.state.worktrees.append(str(wt))
-            if self.lane_branch(lane.id) not in self.state.branches:
-                self.state.branches.append(self.lane_branch(lane.id))
+            if branch not in self.state.branches:
+                self.state.branches.append(branch)
         self._save()
 
         def worker(lane):
