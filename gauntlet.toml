@@ -5,12 +5,20 @@
 [harnesses.agy]
 adapter = "agy"
 supports_write = true
-default_model = "gemini-3.6-flash-high"
+default_model = "gemini-3.7-flash-high"
 launcher = "/Users/jhiver/aios/.reasonix/skills/antigravity-delegation/scripts/agy-delegate"
 [harnesses.agy.errors]
 quota = ["quota", "resource_exhausted", "429"]
 auth  = ["unauthorized", "401"]
 model_unavailable = ["Model is not available"]
+
+[harnesses.codex]
+adapter = "codex"
+supports_write = true
+default_model = "gpt-5.6-sol"
+[harnesses.codex.errors]
+quota = ["quota", "429", "insufficient_quota", "rate_limit_exceeded"]
+auth  = ["unauthorized", "401", "authentication"]
 
 [harnesses.cmd]
 adapter = "cmd"
@@ -24,6 +32,7 @@ model_unavailable = ["MODEL_NOT_IN_PLAN", "model is not available", "Unknown eff
 [harnesses.kimi]
 adapter = "kimi"
 supports_write = true
+default_model = "kimi-code/k3"
 [harnesses.kimi.errors]
 quota = ["quota", "429"]
 auth  = ["unauthorized", "401"]
@@ -47,26 +56,27 @@ chain = [
 
 [roles.fixer]
 chain = [
-  { harness = "cmd", model = "gpt-5.6-luna", effort = "max" },
   { harness = "agy" },
+  { harness = "codex", model = "gpt-5.6-sol", effort = "xhigh" },
+  { harness = "cmd", model = "gpt-5.6-luna", effort = "max" },
 ]
 
 [roles.reviewer]
 chain = [
-  { harness = "cmd", model = "deepseek-v4-pro", effort = "high" },
-  { harness = "reasonix", model = "deepseek-v4-pro" },
+  { harness = "kimi", model = "kimi-code/k3" },
+  { harness = "codex", model = "gpt-5.6-sol", effort = "xhigh" },
 ]
 
 [roles.judge]
 chain = [
-  { harness = "cmd", model = "deepseek-v4-pro", effort = "high" },
-  { harness = "reasonix", model = "deepseek-v4-pro" },
+  { harness = "kimi", model = "kimi-code/k3" },
+  { harness = "codex", model = "gpt-5.6-sol", effort = "xhigh" },
 ]
 
 [roles.planner]
 chain = [
-  { harness = "cmd", model = "deepseek-v4-pro" },
-  { harness = "reasonix", model = "deepseek-v4-pro" },
+  { harness = "kimi", model = "kimi-code/k3" },
+  { harness = "codex", model = "gpt-5.6-sol", effort = "xhigh" },
 ]
 
 [roles.director]
@@ -74,7 +84,12 @@ chain = [{ harness = "human" }]
 
 [policy]
 checkpoints = ["plan", "deliver"]
-max_fix_waves = 2
+# Fix waves are granted while the mission converges (each judgment must beat
+# the lowest blocking-group count so far). max_total_waves is the absolute
+# safety cap; on_wave_cap says what happens when convergence stalls:
+# "checkpoint" asks the director for one more wave, "block" stops immediately.
+max_total_waves = 5
+on_wave_cap = "checkpoint"
 idle_timeout_s = 900
 hard_timeout_s = 2700
 lane_timeout_s = 5400

@@ -103,6 +103,40 @@ class VerdictValidationTest(unittest.TestCase):
         self.assertEqual([g.actionable for g in groups],
                          [True, True, False, False])
 
+    def test_class_defaults_to_code_defect(self):
+        groups = validate_verdict({"groups": [self._group()]}, CONTRACT_IDS)
+        self.assertEqual(groups[0].defect_class, "code_defect")
+        self.assertTrue(groups[0].blocking)
+        self.assertFalse(groups[0].polish)
+
+    def test_unknown_class_rejected(self):
+        with self.assertRaises(VerdictError):
+            validate_verdict({"groups": [self._group(**{"class": "style"})]},
+                             CONTRACT_IDS)
+
+    def test_doc_and_evidence_classes_are_polish_not_blocking(self):
+        groups = validate_verdict({"groups": [
+            self._group(**{"class": "doc_drift"}),
+            self._group(**{"class": "evidence_gap"}),
+        ]}, CONTRACT_IDS)
+        self.assertEqual([g.blocking for g in groups], [False, False])
+        self.assertEqual([g.polish for g in groups], [True, True])
+
+    def test_redesign_blocks_whatever_its_class(self):
+        groups = validate_verdict(
+            {"groups": [self._group(verdict="REDESIGN",
+                                    **{"class": "doc_drift"})]},
+            CONTRACT_IDS)
+        self.assertTrue(groups[0].blocking)
+
+    def test_non_actionable_verdicts_are_neither_blocking_nor_polish(self):
+        groups = validate_verdict({"groups": [
+            self._group(verdict="REPORT_ONLY", **{"class": "doc_drift"}),
+            self._group(verdict="DISMISS"),
+        ]}, CONTRACT_IDS)
+        self.assertEqual([g.blocking for g in groups], [False, False])
+        self.assertEqual([g.polish for g in groups], [False, False])
+
 
 class PlanValidationTest(unittest.TestCase):
     def test_valid_plan(self):

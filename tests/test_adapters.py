@@ -243,6 +243,29 @@ class ReasonixAdapterTest(unittest.TestCase):
         self.assertNotIn("--allowed-tools", self._argv(write=True))
 
 
+class CodexAdapterTest(unittest.TestCase):
+    def test_build_argv_read_only(self):
+        from src.adapters.codex import CodexAdapter
+        argv = CodexAdapter("codex", {}).build_argv(
+            capsule=Path("/c.md"), worktree=Path("/wt"), write=False,
+            model="gpt-5.6-sol", effort="xhigh")
+        self.assertEqual(argv[0:2], ["codex", "exec"])
+        self.assertIn("-s", argv)
+        self.assertIn("read-only", argv)
+        self.assertIn("-m", argv)
+        self.assertIn("gpt-5.6-sol", argv)
+        self.assertIn("-c", argv)
+        self.assertIn("model_reasoning_effort=xhigh", argv)
+
+    def test_build_argv_write(self):
+        from src.adapters.codex import CodexAdapter
+        argv = CodexAdapter("codex", {}).build_argv(
+            capsule=Path("/c.md"), worktree=Path("/wt"), write=True,
+            model="gpt-5.6-sol", effort="xhigh")
+        self.assertIn("--dangerously-bypass-approvals-and-sandbox", argv)
+        self.assertNotIn("read-only", argv)
+
+
 class ReviewerCapsuleTest(unittest.TestCase):
     def test_diff_path_is_referenced(self):
         text = capsules.reviewer(_mission(), wave=0, run_id="RUN",

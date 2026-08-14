@@ -108,3 +108,54 @@ def load_mission(path) -> Mission:
     except OSError as exc:
         raise MissionError(f"cannot read mission file {path}: {exc}")
     return parse_mission(text, path)
+
+
+def create_stage_mission(parent_mission: Mission, stage: dict, *,
+                         target_branch: str, path: Path) -> Mission:
+    """Generate a child sub-mission file that strictly inherits the parent's
+    invariants, non-goals, and global objective to prevent drift."""
+    import json
+    lines = [
+        "+++",
+        f'slug = "{parent_mission.slug}-{stage["slug"]}"',
+        "",
+        "[[repos]]",
+        f'path = "{parent_mission.repos[0].path}"',
+        f'target_branch = "{target_branch}"',
+    ]
+    gates = stage.get("gates") or parent_mission.repos[0].gates
+    if gates:
+        lines.append(f'gates = {json.dumps(gates)}')
+    
+    if stage.get("owns"):
+        lines += [
+            "",
+            "[[lanes]]",
+            'id = "L1"',
+            f'owns = {json.dumps(stage["owns"])}',
+            f'brief = {json.dumps(stage["brief"])}',
+        ]
+    lines.append("+++")
+    lines.append("")
+    lines.append(f"# Stage Contract: {stage['slug']}")
+    lines.append("")
+    lines.append(f"> **Parent Mission Context**: `{parent_mission.slug}`")
+    lines.append("> ⚠️ **ANTI-DRIFT REQUIREMENT**: This stage is an atomic step of a parent composite mission.")
+    lines.append("> It MUST strictly respect all parent Invariants (`INV-*`) and Non-Goals (`NG-*`).")
+    lines.append("")
+    lines.append(f"## Stage Objective")
+    lines.append(stage.get("brief", "Implement stage deliverables"))
+    lines.append("")
+    if stage.get("contract_ids"):
+        lines.append("## Target Acceptance Criteria for this Stage")
+        for cid in stage["contract_ids"]:
+            lines.append(f"- {cid}")
+        lines.append("")
+    lines.append("## Parent Global Contract (Inherited - Mandatory Invariants)")
+    lines.append(parent_mission.body.strip())
+    
+    content = "\n".join(lines) + "\n"
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+    return parse_mission(content, path)

@@ -100,7 +100,10 @@ chain = [
 
 [policy]
 checkpoints = ["plan", "deliver"]   # director (human) approval points
-max_fix_waves = 2
+max_total_waves = 5                 # absolute safety cap on fix waves
+on_wave_cap = "checkpoint"          # when convergence stalls: ask the
+                                    # director for one more wave ("block"
+                                    # stops immediately instead)
 idle_timeout_s = 900                # reviewer/judge: no stream activity
 hard_timeout_s = 2700               # reviewer/judge: wall clock cap
 lane_timeout_s = 5400               # implementer/fixer wall clock cap
@@ -127,13 +130,24 @@ errors, not runtime surprises.
 `implementer`, `fixer`, `reviewer`, `judge`, `planner`, `director`.
 
 - `planner` is invoked only when the mission has no pre-written `[[lanes]]`
-  (initial cut) and after each judgment with actionable groups (fix-wave
+  (initial cut) and after each judgment with blocking groups (fix-wave
   recut). Its output is a `gauntlet-plan` JSON block validated like verdicts.
 - `director` is consulted at configured checkpoints; default harness `human`.
-  With `--auto`, checkpoints auto-approve.
+  With `--auto`, checkpoints auto-approve — except the wave-cap consult,
+  which auto-*rejects*: an unattended run must not grant itself extra waves.
 - Before each REVIEW, the orchestrator writes the full base-to-candidate
   diff to `reviews/diff-w<N>.patch` and references it in the reviewer
   capsule, so reviewers do not need shell access to inspect the candidate.
+- The reviewer capsule of a fix wave carries the root causes of every
+  previous round in three buckets — fixed, deferred to the polish pass, and
+  dismissed: a fresh reviewer verifies the previous fixes instead of
+  re-sampling the defect distribution from zero. The judge gets the deferred
+  and dismissed lists too, so a re-opened claim is closed at the layer that
+  decides. Both capsules state the review discipline: claim only against
+  a contract clause, never against a behavior the contract explicitly allows
+  or a non-goal excludes, and keep rare races and crash windows
+  `REPORT_ONLY` unless the mission targets recovery or concurrency.
+- The `fixer` chain also runs the pre-delivery polish pass (see below).
 
 ## Adapter interface (adapters/base.py)
 
@@ -226,9 +240,11 @@ policy). Workers also self-declare `PARTIAL_DELIVERY` in the block.
 
 ```gauntlet-verdict
 {"groups": [{"root_cause": "...", "claims": ["..."], "contract_ids": ["AC-2"],
- "verdict": "FIX", "fix": "...", "owns": "src/auth/session.rs"}]}
+ "verdict": "FIX", "class": "code_defect", "fix": "...",
+ "owns": "src/auth/session.rs"}]}
 ```
 verdict ∈ FIX | REDESIGN | REPORT_ONLY | DISMISS ; empty review = `{"groups": []}`.
+class ∈ code_defect | doc_drift | evidence_gap (default `code_defect`).
 
 ```gauntlet-plan
 {"lanes": [{"id": "F1", "owns": ["src/auth/**"], "forbidden": [],
@@ -237,19 +253,58 @@ verdict ∈ FIX | REDESIGN | REPORT_ONLY | DISMISS ; empty review = `{"groups": 
 ````
 
 `verdicts.py` extracts the LAST matching fenced block, JSON-parses, and
-schema-validates (verdict enum, contract IDs must exist in the contract,
-lane ownership globs non-empty).
+schema-validates (verdict enum, class enum, contract IDs must exist in the
+contract, lane ownership globs non-empty).
+
+Only two kinds of group hold up delivery: a `code_defect` with verdict `FIX`,
+and any `REDESIGN` (only a code defect can make the smallest additive patch
+disproportionate). `doc_drift` and `evidence_gap` are real work but they are
+collected — across every round — for the single polish pass below, so a stale
+doc or an unreproducible proof never costs a fix wave and never blocks a
+candidate whose gates are green.
 
 ## State machine
 
 ```
 INIT → PLAN → [checkpoint: plan] → IMPLEMENT(wave=0) → INSPECT → INTEGRATE
      → GATES → REVIEW → JUDGE
-     → if actionable: PLAN_FIX → IMPLEMENT(wave+=1) → INSPECT → INTEGRATE → GATES → REVIEW → JUDGE
-     → if no actionable: [checkpoint: deliver] → DELIVER → READY
-Terminals: READY | READY_NO_CHANGE | BLOCKED (architecture not converging,
-           exhausted chain, failed required gate, safety violation)
+     → if blocking: PLAN_FIX → IMPLEMENT(wave+=1) → INSPECT → INTEGRATE → GATES → REVIEW → JUDGE
+     → if none blocking: POLISH → [checkpoint: deliver] → DELIVER → READY
+Terminals: READY | READY_NO_CHANGE
+         | BLOCKED_CONVERGENCE   (fix waves stopped reducing the count)
+         | BLOCKED_ARCHITECTURE  (an accepted REDESIGN group)
+         | BLOCKED_GATE          (a required gate failed)
+         | BLOCKED_HARNESS       (no harness in a chain could deliver)
+         | BLOCKED               (safety violation, config error, merge conflict)
 ```
+
+A blocked terminal always means the same thing — **a human decision is
+required, here is the diagnosis** — never "delivered with leftovers". Its kind
+selects the recovery playbook, and `_blocked()` writes a diagnosis section into
+`report.md`: phase at failure, wave, blocking-group trajectory, remaining
+groups with class and owner, gates, harness health, and the preserved
+candidate branch. Nothing else is needed to resume or re-scope.
+
+### Fix waves and convergence
+
+A wave is granted while the mission converges: each judgment must have
+**strictly fewer blocking groups than the best round so far**, so an
+oscillation (7 → 4 → 5) counts as stalled, not as progress. Counting judged
+groups (not raw claims) is what makes the metric honest — the judge has
+already deduplicated by root cause. When the count stalls, `on_wave_cap`
+decides: `checkpoint` asks the director for one more wave (auto-rejected under
+`--auto`), `block` stops immediately. `max_total_waves` is the absolute cap
+that bounds the worst case whatever the trajectory.
+
+### Polish pass
+
+One `fixer` run in the integration worktree, after the last judgment, over the
+accumulated non-blocking findings. It cannot block delivery by construction: a
+failed pass, a write outside the findings' declared `owns`, or a gate that
+breaks on its result discards the pass and the candidate ships as judged —
+each outcome recorded in `report.md` and in the deliver checkpoint. Gates run
+on the dirty worktree *before* the polish is committed, so discarding is a
+`reset --hard`, never a revert of history.
 
 Mechanical checks in code (never delegated to a model):
 - PLAN: pairwise intersection of `owns` globs across lanes must be empty
@@ -262,7 +317,11 @@ Mechanical checks in code (never delegated to a model):
   is diffed against its pre-lanes snapshot — any new path outside
   `.missions/` is a containment breach and blocks the run (`SAFETY`).
 - GATES: run the repo's gate commands once per integrated candidate.
-- Wave counter from `state.json`; exceeding `max_fix_waves` → BLOCKED.
+- JUDGE: blocking-group count per wave is appended to
+  `state.json:blocking_history`; the convergence rule and the absolute cap are
+  computed from it in code, never asked of a model.
+- POLISH: the pass is contained by the union of the findings' `owns` globs
+  (same check as INSPECT) whenever all of them declare one.
 
 ## Worktrees & git (orchestrator-owned)
 
@@ -285,7 +344,8 @@ INIT if the main checkout has staged changes on the target branch.
 ```
 mission.md      # resolved contract (copy of input)
 config.toml     # effective merged config
-state.json      # phase, wave, base_commit, lane states, harness health, verdicts
+state.json      # phase, wave, base_commit, lane states, harness health,
+                # verdicts, blocking_history, polish + blocked diagnosis
 report.md       # compact human-readable mission report
 capsules/       # ephemeral; deleted per lane after successful integration
 outputs/        # one file per harness run (lane id + attempt)
@@ -309,8 +369,12 @@ orchestrator alone runs git and gate commands.
 
 `tests/` with stdlib `unittest`, the `echo` adapter, and a tmp git repo
 fixture: mission parsing, config merge + chain validation, verdict/plan
-extraction + schema rejection, glob-overlap check, forbidden-path diff
-rejection, fallback policy matrix (quota breaker, timeout retry, chain
-exhaustion → human), state round-trip + resume, full loop dry-run
-(INIT→READY with echo harnesses and a real tmp git repo).
+extraction + schema rejection, defect-class semantics (blocking vs polish),
+glob-overlap check, forbidden-path diff rejection, fallback policy matrix
+(quota breaker, timeout retry, chain exhaustion → human), state round-trip +
+resume, full loop dry-run (INIT→READY with echo harnesses and a real tmp git
+repo). `tests/test_waves.py` scripts reviewer/judge verdicts per wave to
+exercise the convergence rule (decrease, equality, oscillation, cap,
+director grant), the blocked-terminal kinds, the polish pass and its three
+discard paths, and the reviewer's cross-round memory.
 `python3 -m unittest discover -s tests -v` must pass with zero warnings.

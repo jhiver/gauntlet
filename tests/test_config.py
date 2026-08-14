@@ -30,25 +30,38 @@ class ConfigTest(unittest.TestCase):
         tool = self.dir / "tool"
         tool.mkdir()
         (tool / "gauntlet.toml").write_text(
-            "[policy]\nmax_fix_waves = 1\n"
+            "[policy]\nmax_total_waves = 1\n"
             "[harnesses.cmd]\nadapter = \"cmd\"\nsupports_write = true\n")
         mission_dir = self.dir / "mission"
         mission_dir.mkdir()
         (mission_dir / "gauntlet.toml").write_text(
-            "[policy]\nmax_fix_waves = 2\n")
+            "[policy]\nmax_total_waves = 2\n")
         override = self.dir / "override.toml"
-        override.write_text("[policy]\nmax_fix_waves = 5\n")
+        override.write_text("[policy]\nmax_total_waves = 5\n")
 
         cfg = load_config(tool_dir=tool)
-        self.assertEqual(cfg["policy"]["max_fix_waves"], 1)
+        self.assertEqual(cfg["policy"]["max_total_waves"], 1)
         self.assertIn("cmd", cfg["harnesses"])  # tool harness survives
 
         cfg = load_config(tool_dir=tool, mission_dir=mission_dir)
-        self.assertEqual(cfg["policy"]["max_fix_waves"], 2)
+        self.assertEqual(cfg["policy"]["max_total_waves"], 2)
 
         cfg = load_config(tool_dir=tool, mission_dir=mission_dir,
                           config_file=override)
-        self.assertEqual(cfg["policy"]["max_fix_waves"], 5)
+        self.assertEqual(cfg["policy"]["max_total_waves"], 5)
+
+    def test_legacy_max_fix_waves_rejected(self):
+        override = self.dir / "legacy.toml"
+        override.write_text("[policy]\nmax_fix_waves = 2\n")
+        with self.assertRaises(ConfigError) as ctx:
+            load_config(tool_dir=self.dir, config_file=override)
+        self.assertIn("max_total_waves", str(ctx.exception))
+
+    def test_unknown_wave_cap_action_rejected(self):
+        override = self.dir / "bad.toml"
+        override.write_text("[policy]\non_wave_cap = \"panic\"\n")
+        with self.assertRaises(ConfigError):
+            load_config(tool_dir=self.dir, config_file=override)
 
     def test_roles_from_later_config_replace_chain(self):
         override = self.dir / "c.toml"

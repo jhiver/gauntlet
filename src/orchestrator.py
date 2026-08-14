@@ -5,9 +5,10 @@ control loop. Phases (DESIGN.md "State machine"):
 
 INIT -> PLAN -> [checkpoint: plan] -> IMPLEMENT(wave=0) -> INSPECT
 -> INTEGRATE -> GATES -> REVIEW -> JUDGE
--> actionable: PLAN_FIX -> IMPLEMENT(wave+=1) -> ... -> JUDGE
--> no actionable: [checkpoint: deliver] -> DELIVER -> READY
-Terminals: READY | READY_NO_CHANGE | BLOCKED.
+-> blocking groups: PLAN_FIX -> IMPLEMENT(wave+=1) -> ... -> JUDGE
+-> none blocking: POLISH -> [checkpoint: deliver] -> DELIVER -> READY
+Terminals: READY | READY_NO_CHANGE | BLOCKED* (a blocked terminal always
+means "a human decision is required", and its kind says which one).
 """
 from __future__ import annotations
 
@@ -29,7 +30,11 @@ from src.report import Report
 
 
 class GauntletError(Exception):
-    pass
+    """A blocking condition. `kind` selects the blocked terminal."""
+
+    def __init__(self, message: str, kind: str = "BLOCKED"):
+        super().__init__(message)
+        self.kind = kind
 
 
 _WRITE_ROLES = {"implementer", "fixer"}
@@ -37,15 +42,20 @@ _WRITE_ROLES = {"implementer", "fixer"}
 
 class Orchestrator:
     def __init__(self, *, tool_dir, mission_path=None, resume_dir=None,
-                 config_path=None, auto: bool = False, dry_run: bool = False,
+                 config_path=None, auto: bool = True, dry_run: bool = False,
+                 profile: str | None = None, replan: bool = False,
+                 depth: int = 0, max_depth: int = 2,
                  log=print):
         self.tool_dir = Path(tool_dir)
         self.auto = auto
         self.dry_run = dry_run
+        self.depth = depth
+        self.max_depth = max_depth
         self.log = log
         self._state_lock = threading.Lock()
         self.git = worktrees.Git(dry_run=dry_run, log=log)
         self.report: Report | None = None
+        self.profile_info = None
 
         if resume_dir:
             self.run_dir = Path(resume_dir)
@@ -62,11 +72,26 @@ class Orchestrator:
                 config_mod.validate_config(self.config)
             self.report = Report(self.run_dir / "report.md")
         else:
+            from src.autoroute import analyze_mission
             self.mission = mission_mod.load_mission(mission_path)
+            if replan:
+                self.mission.lanes = []
+            self.profile_info = analyze_mission(self.mission)
             self.config = config_mod.load_config(
                 tool_dir=self.tool_dir,
                 mission_dir=Path(mission_path).parent,
                 config_file=config_path)
+            
+            # Super-Auto: apply intelligent Pareto routing if requested or if standard defaults are loaded (non-test echo)
+            is_echo_test = all(
+                all(link.get("harness") == "echo" for link in self.config.get("roles", {}).get(r, {}).get("chain", []))
+                for r in ("implementer", "fixer", "reviewer", "judge", "planner")
+                if r in self.config.get("roles", {})
+            )
+            has_custom_config = config_path is not None or (Path(mission_path).parent / "gauntlet.toml").is_file()
+            if (profile or not has_custom_config) and not is_echo_test:
+                self.config["roles"] = config_mod._merge(self.config["roles"], self.profile_info.roles)
+            
             repo = self.mission.repos[0]
             self.state = statemachine.State(
                 slug=self.mission.slug,
@@ -118,14 +143,68 @@ class Orchestrator:
     def _transition(self, phase: str) -> None:
         self.state.phase = phase
         self._save()
+        from src.ui import default_ui
+        default_ui.phase_card(phase, wave=self.state.wave)
         self.log(f"phase -> {phase}")
 
-    def _blocked(self, reason: str) -> None:
-        self.log(f"BLOCKED: {reason}")
+    _NEXT_STEP = {
+        "BLOCKED_CONVERGENCE": (
+            "fix waves stopped reducing the defect count: re-scope the "
+            "contract, or fix the remaining groups by hand and --resume."),
+        "BLOCKED_ARCHITECTURE": (
+            "the judge accepted a REDESIGN group — no proportionate local fix "
+            "exists. A human redesign decision is required."),
+        "BLOCKED_GATE": (
+            "a required gate failed on the candidate; see outputs/gate-*.log, "
+            "fix the cause, then --resume."),
+        "BLOCKED_HARNESS": (
+            "no harness in the role chain could deliver (quota, auth, or "
+            "timeout). Restore access or edit the chain, then --resume."),
+        "BLOCKED": (
+            "the run hit a condition it must not decide alone; see the reason "
+            "above."),
+    }
+
+    def _diagnosis(self) -> str:
+        """Everything a human needs to pick the recovery path, in one read."""
+        lines = [
+            "### Diagnosis",
+            "",
+            f"- phase at failure: {self.state.blocked_phase}",
+            f"- wave: {self.state.wave} of "
+            f"{self.config['policy']['max_total_waves']} max",
+        ]
+        if self.state.blocking_history:
+            lines.append("- blocking-group trajectory: "
+                         + " → ".join(str(n)
+                                      for n in self.state.blocking_history))
+        for group in self._last_judgment_groups():
+            if group.blocking:
+                lines.append(
+                    f"- remaining: {group.root_cause} "
+                    f"[{group.verdict}, {group.defect_class}]"
+                    + (f" owns={group.owns}" if group.owns else ""))
+        if self.state.gates:
+            lines.append("- gates: " + "; ".join(self.state.gates))
+        if self.health.snapshot():
+            lines.append(f"- harness health: {self.health.snapshot()}")
+        if self.state.branches:
+            lines.append("- candidate preserved on branch "
+                         f"{self.integration_branch()} (worktrees kept)")
+        lines += ["", "Next: " + self._NEXT_STEP.get(
+            self.state.blocked_kind, self._NEXT_STEP["BLOCKED"])]
+        return "\n".join(lines)
+
+    def _blocked(self, reason: str, kind: str = "BLOCKED") -> None:
+        self.log(f"{kind}: {reason}")
+        from src.ui import default_ui
+        default_ui.error(f"{kind}: {reason}")
         self.state.blocked_reason = reason
-        self.state.phase = "BLOCKED"
+        self.state.blocked_kind = kind
+        self.state.blocked_phase = self.state.phase
+        self.state.phase = kind
         if self.report:
-            self.report.section("BLOCKED", reason)
+            self.report.section(kind, f"{reason}\n\n{self._diagnosis()}")
         self._save()
 
     def _write_capsule(self, name: str, text: str) -> Path:
@@ -134,17 +213,61 @@ class Orchestrator:
         path.write_text(text, encoding="utf-8")
         return path
 
+    # --------------------------------------------------------- judgment log
+
+    @staticmethod
+    def _slot(items: list, index: int, value) -> list:
+        """Wave-indexed write: re-entering a phase (--resume) overwrites its
+        own entry instead of appending a phantom round."""
+        return items[:index] + [value]
+
+    def _judgment_groups(self, path) -> list:
+        try:
+            data = json.loads(Path(path).read_text(encoding="utf-8"))
+            return verdicts.validate_verdict(data, self.mission.contract_ids)
+        except (OSError, json.JSONDecodeError, verdicts.VerdictError) as exc:
+            self.log(f"warning: unreadable judgment {path}: {exc}")
+            return []
+
+    def _last_judgment_groups(self) -> list:
+        if not self.state.judgments:
+            return []
+        return self._judgment_groups(self.state.judgments[-1])
+
+    def _prior_findings(self) -> tuple[list[str], list[str], list[str]]:
+        """Root causes of the earlier rounds: fixed, deferred, dismissed.
+
+        Handed to the next reviewer so a fresh review verifies the previous
+        fixes instead of re-sampling the defect distribution from zero.
+        """
+        fixed: list[str] = []
+        deferred: list[str] = []
+        dismissed: list[str] = []
+        for wave, path in enumerate(self.state.judgments):
+            for group in self._judgment_groups(path):
+                entry = f"[wave {wave}] {group.root_cause}"
+                if group.blocking:
+                    fixed.append(entry)
+                elif group.polish:
+                    deferred.append(f"{entry} [{group.defect_class}]")
+                else:
+                    reason = f" — {group.verdict}"
+                    if group.fix:
+                        reason += f": {group.fix}"
+                    dismissed.append(entry + reason)
+        return fixed, deferred, dismissed
+
     # --------------------------------------------------------- role runner
 
     def _validate_report(self, result):
         try:
             report = verdicts.validate_report(
                 verdicts.extract_block_from_file(result.output_path, "report"))
-        except verdicts.VerdictError as exc:
+            if report.get("partial", False):
+                return (FailureKind.PARTIAL_DELIVERY,
+                        "worker declared partial delivery")
+        except (verdicts.VerdictError, OSError) as exc:
             return FailureKind.OUTPUT_INVALID, str(exc)
-        if report["partial"]:
-            return (FailureKind.PARTIAL_DELIVERY,
-                    "worker declared partial delivery")
         return None, ""
 
     def _validate_verdict(self, result):
@@ -152,15 +275,15 @@ class Orchestrator:
             verdicts.validate_verdict(
                 verdicts.extract_block_from_file(result.output_path, "verdict"),
                 self.mission.contract_ids)
-        except verdicts.VerdictError as exc:
+        except (verdicts.VerdictError, OSError) as exc:
             return FailureKind.OUTPUT_INVALID, str(exc)
         return None, ""
 
     def _validate_plan(self, result):
         try:
-            verdicts.validate_plan(
-                verdicts.extract_block_from_file(result.output_path, "plan"))
-        except verdicts.VerdictError as exc:
+            text = Path(result.output_path).read_text(encoding="utf-8", errors="replace")
+            verdicts.extract_planner_result(text, self.mission.contract_ids)
+        except (verdicts.VerdictError, OSError) as exc:
             return FailureKind.OUTPUT_INVALID, str(exc)
         return None, ""
 
@@ -194,7 +317,8 @@ class Orchestrator:
             return adapter.run(
                 capsule=capsule, worktree=worktree, write=write,
                 model=model, effort=effort, hard_timeout_s=hard_s,
-                idle_timeout_s=idle_s, out_dir=self.run_dir / "outputs")
+                idle_timeout_s=idle_s, out_dir=self.run_dir / "outputs",
+                role=role, lane_id=lane_id)
 
         return execute_chain(
             role=role, links=links, health=self.health,
@@ -237,6 +361,7 @@ class Orchestrator:
             "INIT": self._phase_init,
             "PLAN": self._phase_plan,
             "PLAN_CHECKPOINT": self._phase_plan_checkpoint,
+            "STAGES": self._phase_stages,
             "IMPLEMENT": self._phase_implement,
             "INSPECT": self._phase_inspect,
             "INTEGRATE": self._phase_integrate,
@@ -244,6 +369,7 @@ class Orchestrator:
             "REVIEW": self._phase_review,
             "JUDGE": self._phase_judge,
             "PLAN_FIX": self._phase_plan_fix,
+            "POLISH": self._phase_polish,
             "DELIVER_CHECKPOINT": self._phase_deliver_checkpoint,
             "DELIVER": self._phase_deliver,
         }
@@ -251,11 +377,12 @@ class Orchestrator:
             while self.state.phase not in statemachine.TERMINALS:
                 handlers[self.state.phase]()
         except GauntletError as exc:
-            self._blocked(str(exc))
+            self._blocked(str(exc), exc.kind)
         except (ChainExhausted, AuthAbort) as exc:
-            self._blocked(str(exc))
+            self._blocked(str(exc), "BLOCKED_HARNESS")
         phase = self.state.phase
-        reason = f" — {self.state.blocked_reason}" if phase == "BLOCKED" else ""
+        reason = (f" — {self.state.blocked_reason}"
+                  if phase in statemachine.BLOCKED_TERMINALS else "")
         self.log(f"terminal phase: {phase}{reason}")
         if self.report:
             self.report.section("TERMINAL", phase + reason)
@@ -314,6 +441,25 @@ class Orchestrator:
             f"repo: {repo}\nbase: {self.state.base_commit}\n"
             f"target branch: {target}\n"
             f"pre-written lanes: {len(self.state.lanes)}")
+
+        from src.ui import default_ui
+        meta = {
+            "Repository": str(repo),
+            "Target Branch": target,
+            "Base Commit": str(self.state.base_commit)[:12],
+            "Gates Suite": f"{len(self.state.gates)} gate(s)",
+            "Lanes Planned": f"{len(self.state.lanes)} lane(s)",
+        }
+        if getattr(self, "profile_info", None):
+            tier_title = self.profile_info.tier.upper()
+            reasons_str = "; ".join(self.profile_info.reasons[:2])
+            meta["Pareto Profile"] = f"⚡ {tier_title} ({reasons_str})"
+        
+        default_ui.banner(
+            title=f"GAUNTLET MISSION • {self.state.slug}",
+            subtitle="Autonomous Multi-Agent Pareto State Machine",
+            meta=meta
+        )
         self._transition("PLAN")
 
     def _run_planner(self, *, groups=None, complaint=None):
@@ -323,15 +469,17 @@ class Orchestrator:
                              groups=groups, complaint=complaint))
         outcome = self._run_role("planner", capsule, self.work_wt(),
                                  write=False)
-        data = verdicts.extract_block_from_file(outcome.result.output_path,
-                                                "plan")
-        planned = verdicts.validate_plan(data)
-        return [
+        text = Path(outcome.result.output_path).read_text(encoding="utf-8", errors="replace")
+        kind, data = verdicts.extract_planner_result(text, self.mission.contract_ids)
+        if kind == "stages":
+            return "stages", data
+        lanes = [
             statemachine.LaneState(
                 id=p["id"], owns=p["owns"], forbidden=p["forbidden"],
                 tests=p["tests"], brief=p["brief"], addresses=p["addresses"])
-            for p in planned
+            for p in data
         ]
+        return "lanes", lanes
 
     def _check_overlaps(self, lanes) -> list:
         files = worktrees.tracked_files(self.git, self.repo_path)
@@ -344,13 +492,36 @@ class Orchestrator:
                 raise GauntletError(
                     f"config error: pre-written lane owns globs overlap: "
                     f"{overlaps}")
-        else:
-            lanes = self._run_planner()
-            overlaps = self._check_overlaps(lanes)
-            if overlaps:
-                # Back to the planner once, then the human director.
-                lanes = self._run_planner(
-                    complaint=f"lane owns globs overlapped: {overlaps}")
+            summary = "\n".join(
+                f"- {lane.id}: owns={lane.owns} forbidden={lane.forbidden}"
+                for lane in self.state.lanes)
+            self.report.section("PLAN", f"(pre-written lanes)\n{summary}")
+            self._save()
+            self._transition("IMPLEMENT")
+            return
+
+        kind, data = self._run_planner()
+        if kind == "stages" and self.depth < self.max_depth:
+            self.state.stages = data
+            summary = "\n".join(
+                f"- Stage {i+1} [{s['slug']}]: {s.get('brief', '')} (owns: {s.get('owns', [])})"
+                for i, s in enumerate(data))
+            self.report.section("PLAN", f"(sequential stages)\n{summary}")
+            self._save()
+            from src.ui import default_ui
+            default_ui.step("PLAN", f"Decomposed into {len(data)} sequential stage(s)")
+            for i, s in enumerate(data, 1):
+                default_ui.step(f"STAGE {i}/{len(data)}", f"{s['slug']}: {s.get('brief', '')}")
+            self._transition("STAGES")
+            return
+
+        lanes = data
+        overlaps = self._check_overlaps(lanes)
+        if overlaps:
+            # Back to the planner once, then the human director.
+            kind, lanes = self._run_planner(
+                complaint=f"lane owns globs overlapped: {overlaps}")
+            if kind == "lanes":
                 overlaps = self._check_overlaps(lanes)
                 if overlaps and not self._ask_human(
                         "plan",
@@ -359,13 +530,68 @@ class Orchestrator:
                     raise GauntletError(
                         f"planner could not produce orthogonal lanes: "
                         f"{overlaps}")
-            self.state.lanes = lanes
+        self.state.lanes = lanes
         summary = "\n".join(
             f"- {lane.id}: owns={lane.owns} forbidden={lane.forbidden}"
             for lane in self.state.lanes)
         self.report.section("PLAN", summary)
         self._save()
         self._transition("PLAN_CHECKPOINT")
+
+    def _phase_stages(self) -> None:
+        """Execute composite mission sub-stages sequentially."""
+        from src.ui import default_ui
+        from src.mission import create_stage_mission
+        stages = self.state.stages
+        total = len(stages)
+        
+        for i, stage in enumerate(stages, 1):
+            slug = stage["slug"]
+            brief = stage.get("brief", "")
+            default_ui.stage_header(i, total, slug, brief)
+            
+            sub_mission_path = Path(self.state.run_dir) / "sub-missions" / f"{i:02d}-{slug}.input.md"
+            sub_mission = create_stage_mission(
+                self.mission, stage, target_branch=self.integration_branch(),
+                path=sub_mission_path)
+            
+            # Check if this sub-mission was already started or completed
+            date = time.strftime("%Y%m%d")
+            missions_root = Path(self.mission.repos[0].path) / ".missions"
+            expected_run_dir = missions_root / f"{date}-{sub_mission.slug}"
+            resume_dir = None
+            if (expected_run_dir / "state.json").exists():
+                try:
+                    prior_state = statemachine.load(expected_run_dir)
+                    if prior_state.phase == "READY":
+                        default_ui.success(f"Stage {i}/{total} ({slug}) already completed (READY).")
+                        self.state.integrated_changes = True
+                        continue
+                    resume_dir = expected_run_dir
+                except Exception:
+                    pass
+            
+            sub_orch = Orchestrator(
+                tool_dir=self.tool_dir,
+                mission_path=sub_mission_path,
+                resume_dir=resume_dir,
+                config_path=None,
+                auto=self.auto,
+                dry_run=self.dry_run,
+                depth=self.depth + 1,
+                max_depth=self.max_depth,
+                log=self.log,
+            )
+            rc = sub_orch.run()
+            if rc != 0:
+                kind = sub_orch.state.blocked_kind or "BLOCKED_STAGE"
+                raise GauntletError(
+                    f"Stage {i}/{total} ({slug}) blocked in phase {sub_orch.state.phase}: "
+                    f"{sub_orch.state.blocked_reason}", kind)
+            self.state.integrated_changes = True
+            default_ui.success(f"Stage {i}/{total} ({slug}) completed successfully.")
+        
+        self._transition("DELIVER_CHECKPOINT")
 
     def _phase_plan_checkpoint(self) -> None:
         summary = "\n".join(
@@ -452,8 +678,11 @@ class Orchestrator:
         for lane in self.state.lanes:
             if lane.status != "done":
                 continue
+            base = (self.state.base_commit
+                    if self.state.wave == 0
+                    else self.integration_branch())
             lane.changed = worktrees.lane_changed_files(
-                self.git, self.lane_wt(lane.id), self.state.base_commit)
+                self.git, self.lane_wt(lane.id), base)
             violations = worktrees.check_lane_diff(
                 lane.changed, lane.owns, lane.forbidden)
             violations += worktrees.check_claimed_vs_diff(
@@ -470,9 +699,17 @@ class Orchestrator:
             "\n".join(f"- {lane.id}: {lane.status} {lane.detail}"
                       for lane in self.state.lanes))
         if rejected:
+            from src.ui import default_ui
+            for lane in rejected:
+                default_ui.error(f"Lane {lane.id} rejected", lane.detail)
             raise GauntletError(
                 "INSPECT rejected lane(s): "
                 + "; ".join(f"{lane.id}: {lane.detail}" for lane in rejected))
+        else:
+            from src.ui import default_ui
+            for lane in self.state.lanes:
+                if lane.status == "done":
+                    default_ui.success(f"Lane {lane.id} inspection passed", lane.detail)
         self._transition("INTEGRATE")
 
     def _phase_integrate(self) -> None:
@@ -517,7 +754,8 @@ class Orchestrator:
         if failed:
             raise GauntletError(
                 "required gate(s) failed: "
-                + "; ".join(f"{r.command} ({r.detail})" for r in failed))
+                + "; ".join(f"{r.command} ({r.detail})" for r in failed),
+                "BLOCKED_GATE")
         self._transition("REVIEW")
 
     def _phase_review(self) -> None:
@@ -530,30 +768,37 @@ class Orchestrator:
         else:  # dry-run: the integration worktree was never created
             diff = "(integration worktree unavailable — dry-run)\n"
         diff_path.write_text(diff, encoding="utf-8")
+        fixed, deferred, dismissed = self._prior_findings()
         capsule = self._write_capsule(
             f"reviewer-w{self.state.wave}",
             capsules.reviewer(self.mission, wave=self.state.wave,
                               run_id=self.state.run_id,
-                              diff_path=str(diff_path)))
+                              diff_path=str(diff_path), fixed=fixed,
+                              deferred=deferred, dismissed=dismissed))
         outcome = self._run_role("reviewer", capsule, self.work_wt(),
                                  write=False)
         data = verdicts.extract_block_from_file(outcome.result.output_path,
                                                 "verdict")
         path = self.run_dir / "verdicts" / f"review-w{self.state.wave}.json"
         path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-        self.state.reviews.append(str(path))
+        self.state.reviews = self._slot(self.state.reviews, self.state.wave,
+                                        str(path))
         self.report.section(
             f"REVIEW wave {self.state.wave}",
             f"groups: {len(data.get('groups', []))} "
             f"(harness: {outcome.harness}, attempts: {outcome.attempts})")
+        from src.ui import default_ui
+        default_ui.step("REVIEW", f"Review completed with {len(data.get('groups', []))} finding group(s)")
         self._transition("JUDGE")
 
     def _phase_judge(self) -> None:
         review_json = Path(self.state.reviews[-1]).read_text(encoding="utf-8")
+        _, deferred, dismissed = self._prior_findings()
         capsule = self._write_capsule(
             f"judge-w{self.state.wave}",
             capsules.judge(self.mission, wave=self.state.wave,
-                           run_id=self.state.run_id, review_json=review_json))
+                           run_id=self.state.run_id, review_json=review_json,
+                           deferred=deferred, dismissed=dismissed))
         outcome = self._run_role("judge", capsule, self.work_wt(),
                                  write=False)
         data = verdicts.extract_block_from_file(outcome.result.output_path,
@@ -561,48 +806,97 @@ class Orchestrator:
         groups = verdicts.validate_verdict(data, self.mission.contract_ids)
         path = self.run_dir / "verdicts" / f"judgment-w{self.state.wave}.json"
         path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-        self.state.judgments.append(str(path))
+        self.state.judgments = self._slot(self.state.judgments,
+                                          self.state.wave, str(path))
+        blocking = [g for g in groups if g.blocking]
+        polish = [g for g in groups if g.polish]
+        history = self.state.blocking_history[:self.state.wave]
+        self.state.blocking_history = history + [len(blocking)]
         self._save()
-        actionable = [g for g in groups if g.actionable]
+        trajectory = " → ".join(str(n) for n in self.state.blocking_history)
         self.report.section(
             f"JUDGE wave {self.state.wave}",
-            f"groups: {len(groups)}, actionable: {len(actionable)}")
-        if actionable:
-            if self.state.wave >= self.config["policy"]["max_fix_waves"]:
+            f"groups: {len(groups)}, blocking: {len(blocking)}, "
+            f"polish: {len(polish)}\nblocking trajectory: {trajectory}")
+        
+        from src.ui import default_ui
+        default_ui.verdicts_table(groups)
+        if not blocking:
+            self._transition("POLISH")
+            return
+
+        policy = self.config["policy"]
+        decision = statemachine.convergence_state(
+            history, len(blocking), wave=self.state.wave,
+            max_total_waves=policy["max_total_waves"])
+        # A REDESIGN group is the architecture case: no proportionate local
+        # fix exists, so no number of extra waves would have closed it.
+        kind = ("BLOCKED_ARCHITECTURE"
+                if any(g.verdict == "REDESIGN" for g in blocking)
+                else "BLOCKED_CONVERGENCE")
+        if decision == statemachine.CAPPED:
+            raise GauntletError(
+                f"fix waves hit the absolute cap "
+                f"(max_total_waves={policy['max_total_waves']}) with "
+                f"{len(blocking)} blocking group(s) left "
+                f"(trajectory {trajectory})", kind)
+        if decision == statemachine.STALLED:
+            context = (
+                f"convergence stalled: {len(blocking)} blocking group(s) "
+                f"after {self.state.wave} fix wave(s); trajectory "
+                f"{trajectory} did not beat its own best round.\n"
+                "approve to grant one more fix wave anyway")
+            if (policy["on_wave_cap"] != "checkpoint"
+                    or not self._ask_human("wave-cap", context)):
                 raise GauntletError(
-                    f"architecture not converging: still {len(actionable)} "
-                    f"actionable group(s) after {self.state.wave} fix wave(s)")
-            self.state.wave += 1
-            self._pending_groups = [
-                {"root_cause": g.root_cause, "verdict": g.verdict,
-                 "fix": g.fix} for g in actionable]
-            self._transition("PLAN_FIX")
-        else:
-            self._transition("DELIVER_CHECKPOINT")
+                    f"convergence stalled: {len(blocking)} blocking group(s) "
+                    f"left, trajectory {trajectory}", kind)
+            self.log("director granted one more fix wave despite the stall")
+        self.state.wave += 1
+        self._pending_groups = [
+            {"root_cause": g.root_cause, "verdict": g.verdict, "fix": g.fix,
+             "owns": g.owns, "defect_class": g.defect_class}
+            for g in blocking]
+        self._transition("PLAN_FIX")
 
     def _phase_plan_fix(self) -> None:
         groups = getattr(self, "_pending_groups", [])
         # Rebuild lightweight group objects for capsule rendering.
         groups = [verdicts.ClaimGroup(**g) for g in groups] if groups else None
-        if groups is None and self.state.judgments:
-            data = json.loads(Path(self.state.judgments[-1]).read_text())
-            all_groups = verdicts.validate_verdict(data,
-                                                   self.mission.contract_ids)
-            groups = [g for g in all_groups if g.actionable]
-        lanes = self._run_planner(groups=groups)
-        overlaps = self._check_overlaps(lanes)
-        if overlaps:
-            lanes = self._run_planner(
-                groups=groups,
-                complaint=f"lane owns globs overlapped: {overlaps}")
+        if groups is None:  # --resume: rebuild from the judgment on disk
+            groups = [g for g in self._last_judgment_groups() if g.blocking]
+        # Fast path: deterministic fix lane if 1 blocking group (0 LLM overhead)
+        is_echo = self.config.get("roles", {}).get("planner", {}).get("chain", [{}])[0].get("harness") == "echo"
+        if not is_echo and groups and len(groups) == 1:
+            g = groups[0]
+            owns = [g.owns] if g.owns else []
+            if owns and owns[0].startswith("lib/"):
+                cand = owns[0].replace("lib/", "test/").replace(".js", ".test.js")
+                if (self.repo_path / cand).is_file() and cand not in owns:
+                    owns.append(cand)
+            lanes = [mission_mod.Lane(
+                id="L1",
+                owns=owns,
+                forbidden=[],
+                tests=[f"node --test {owns[-1]}"] if len(owns) > 1 and owns[-1].endswith(".test.js") else [],
+                brief=g.fix or g.root_cause,
+                addresses=[g.root_cause]
+            )]
+        else:
+            _, lanes = self._run_planner(groups=groups)
             overlaps = self._check_overlaps(lanes)
-            if overlaps and not self._ask_human(
-                    "plan-fix",
-                    f"fix-wave lanes overlap: {overlaps}\n"
-                    "approve to proceed anyway"):
-                raise GauntletError(
-                    f"fix-wave planner could not produce orthogonal lanes: "
-                    f"{overlaps}")
+            if overlaps:
+                _, lanes = self._run_planner(
+                    groups=groups,
+                    complaint=f"lane owns globs overlapped: {overlaps}")
+                overlaps = self._check_overlaps(lanes)
+                if overlaps and not self._ask_human(
+                        "plan-fix",
+                        f"fix-wave lanes overlap: {overlaps}\n"
+                        "approve to proceed anyway"):
+                    raise GauntletError(
+                        f"fix-wave planner could not produce orthogonal lanes: "
+                        f"{overlaps}")
         self.state.lanes = lanes
         self.report.section(
             f"PLAN_FIX wave {self.state.wave}",
@@ -611,11 +905,101 @@ class Orchestrator:
         self._save()
         self._transition("IMPLEMENT")
 
+    def _polish_groups(self) -> list:
+        """Non-blocking findings of every round, deduplicated by root cause.
+
+        They accumulate across waves: a doc drift raised at wave 0 is not in
+        any fix lane, so it survives until this pass clears it.
+        """
+        seen: set[str] = set()
+        out = []
+        for path in self.state.judgments:
+            for group in self._judgment_groups(path):
+                if group.polish and group.root_cause not in seen:
+                    seen.add(group.root_cause)
+                    out.append(group)
+        return out
+
+    def _phase_polish(self) -> None:
+        """One pass over the non-blocking findings, after the last judgment.
+
+        By construction nothing here can block delivery: a failed, contained,
+        or gate-breaking polish is discarded and reported, and the candidate
+        ships as judged.
+        """
+        wt = self.integration_wt()
+        groups = self._polish_groups()
+        if self.state.polish_done or not groups or not wt.is_dir():
+            self.state.polish_done = True
+            if groups and not wt.is_dir():
+                self.state.polish_detail = (
+                    f"{len(groups)} non-blocking finding(s) left unpolished: "
+                    "no integration worktree")
+            self._transition("DELIVER_CHECKPOINT")
+            return
+
+        owns = [g.owns for g in groups if g.owns]
+        contained = len(owns) == len(groups)
+        capsule = self._write_capsule(
+            f"polish-w{self.state.wave}",
+            capsules.polish(self.mission, groups, wave=self.state.wave,
+                            run_id=self.state.run_id,
+                            owns=owns if contained else None))
+        before = worktrees.checkout_status(self.git, self.repo_path)
+        try:
+            self._run_role("fixer", capsule, wt, write=True)
+        except (ChainExhausted, AuthAbort) as exc:
+            detail = f"polish pass failed, candidate unchanged: {exc}"
+        else:
+            detail = self._settle_polish(wt, groups, owns, contained)
+        drift = worktrees.checkout_drift(
+            before, worktrees.checkout_status(self.git, self.repo_path))
+        if drift:
+            raise GauntletError(
+                "SAFETY: main checkout modified during the polish pass: "
+                + ", ".join(drift))
+        self.state.polish_done = True
+        self.state.polish_detail = detail
+        self.report.section(f"POLISH wave {self.state.wave}", detail)
+        self._save()
+        self._transition("DELIVER_CHECKPOINT")
+
+    def _settle_polish(self, wt, groups, owns, contained: bool) -> str:
+        """Keep the polish only if it stayed in bounds and the gates hold."""
+        changed = worktrees.checkout_status(self.git, wt)
+        if not changed:
+            return f"{len(groups)} finding(s) submitted, nothing changed"
+        if contained:
+            violations = worktrees.check_lane_diff(changed, owns, [])
+            if violations:
+                worktrees.discard_changes(self.git, wt)
+                return ("polish discarded (wrote outside the findings' owns): "
+                        + "; ".join(violations))
+        else:
+            self.log("polish: some findings declare no owns; "
+                     "containment not enforced")
+        results = gates_mod.run_gates(
+            self.state.gates, cwd=wt, out_dir=self.run_dir / "outputs",
+            dry_run=self.dry_run, log=self.log,
+            timeout_s=self.config["policy"]["lane_timeout_s"])
+        failed = [r for r in results if not r.ok]
+        if failed:
+            worktrees.discard_changes(self.git, wt)
+            return ("polish discarded (gates failed on its result): "
+                    + "; ".join(r.command for r in failed))
+        worktrees.commit_all(
+            self.git, wt,
+            f"gauntlet({self.state.run_id}): polish pass "
+            f"({len(groups)} non-blocking finding(s))")
+        return (f"{len(groups)} finding(s) cleared, "
+                f"{len(changed)} file(s) changed: " + ", ".join(changed))
+
     def _phase_deliver_checkpoint(self) -> None:
         context = (
             f"run: {self.state.run_id}\nwave: {self.state.wave}\n"
             f"changes integrated: {self.state.integrated_changes}\n"
-            f"judgment: no actionable groups\n"
+            f"judgment: no blocking groups\n"
+            f"polish: {self.state.polish_detail or 'nothing to polish'}\n"
             "approve to deliver into the target branch")
         if not self._checkpoint("deliver", context):
             raise GauntletError("deliver checkpoint rejected by director")
@@ -640,15 +1024,28 @@ class Orchestrator:
             if failed:
                 raise GauntletError(
                     "gate(s) failed after rebase: "
-                    + "; ".join(r.command for r in failed))
-            if worktrees.current_branch(self.git, repo) != target:
-                raise GauntletError(
-                    f"main checkout is not on '{target}'; refusing "
-                    "fast-forward merge")
-            worktrees.ff_merge(self.git, repo, branch)
+                    + "; ".join(r.command for r in failed), "BLOCKED_GATE")
+            if self.depth > 0:
+                # Sub-stage: target branch is either in a parent worktree or ref
+                target_wt = worktrees.find_worktree_for_branch(self.git, repo, target)
+                if target_wt:
+                    worktrees.ff_merge(self.git, target_wt, branch)
+                else:
+                    self.git.run(["branch", "-f", target, branch], cwd=repo)
+            else:
+                if worktrees.current_branch(self.git, repo) != target:
+                    raise GauntletError(
+                        f"main checkout is not on '{target}'; refusing "
+                        "fast-forward merge")
+                worktrees.ff_merge(self.git, repo, branch)
             final = "READY"
         self._cleanup()
         self.report.section("DELIVER", final)
+        from src.ui import default_ui
+        if final == "READY":
+            default_ui.success(f"Mission '{self.state.slug}' delivered successfully into '{target}'!")
+        elif final == "READY_NO_CHANGE":
+            default_ui.success(f"Mission '{self.state.slug}' verified: behavior already satisfies contract.")
         self._transition(final)
 
     def _cleanup(self) -> None:

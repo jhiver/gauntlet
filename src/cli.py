@@ -33,14 +33,28 @@ def main(argv=None) -> int:
                              "frontmatter); optional with --resume")
     parser.add_argument("--config", metavar="FILE",
                         help="extra config file (highest precedence)")
-    parser.add_argument("--auto", action="store_true",
-                        help="auto-approve all director checkpoints")
+    parser.add_argument("--auto", action="store_true", default=True,
+                        help="auto-approve all director checkpoints (default)")
+    parser.add_argument("--interactive", "--no-auto", action="store_false", dest="auto",
+                        help="prompt for human approval at director checkpoints")
     parser.add_argument("--resume", metavar="RUN_DIR",
                         help="resume a run from its run directory")
     parser.add_argument("--dry-run", action="store_true",
                         help="print git/harness commands instead of executing "
                              "(harnesses run as echo)")
+    parser.add_argument("--replan", action="store_true",
+                        help="force AI planner to decompose the mission, ignoring any pre-written lanes")
+    parser.add_argument("--profile", choices=["auto", "fast", "standard", "high-risk"],
+                        default="auto",
+                        help="Super-Auto routing profile (Pareto frontier intelligence vs speed)")
+    parser.add_argument("--no-color", action="store_true",
+                        help="disable ANSI color and live ticker")
     args = parser.parse_args(argv)
+
+    if args.no_color:
+        os.environ["NO_COLOR"] = "1"
+        from src.ui import default_ui
+        default_ui.enable_color = False
 
     # The wrapper exports the caller's cwd so relative paths keep working
     # even though the wrapper cd's into the tool directory.
@@ -66,6 +80,8 @@ def main(argv=None) -> int:
             config_path=config_path,
             auto=args.auto,
             dry_run=args.dry_run,
+            replan=args.replan,
+            profile=None if args.profile == "auto" else args.profile,
         )
     except (MissionError, ConfigError) as exc:
         print(f"gauntlet: {exc}", file=sys.stderr)

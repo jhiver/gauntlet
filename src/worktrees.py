@@ -87,6 +87,15 @@ def tracked_files(git: Git, repo) -> list[str]:
 
 def create_worktree(git: Git, repo, wt, branch: str, base: str) -> None:
     git.run(["worktree", "add", "-b", branch, str(wt), base], cwd=repo)
+    # Symlink node_modules if present in main repo
+    import os
+    src = Path(repo) / "node_modules"
+    dst = Path(wt) / "node_modules"
+    if src.exists() and not dst.exists():
+        try:
+            os.symlink(src, dst)
+        except OSError:
+            pass
 
 
 def remove_worktree(git: Git, repo, wt) -> None:
@@ -95,6 +104,19 @@ def remove_worktree(git: Git, repo, wt) -> None:
 
 def delete_branch(git: Git, repo, branch: str) -> None:
     git.run(["branch", "-D", branch], cwd=repo)
+
+
+def find_worktree_for_branch(git: Git, repo, branch: str) -> Path | None:
+    output = git.run(["worktree", "list", "--porcelain"], cwd=repo, mutating=False) or ""
+    current_wt = None
+    for line in output.splitlines():
+        if line.startswith("worktree "):
+            current_wt = line[len("worktree "):].strip()
+        elif line.startswith("branch ") and current_wt:
+            b = line[len("branch "):].strip()
+            if b == f"refs/heads/{branch}" or b == branch:
+                return Path(current_wt)
+    return None
 
 
 def lane_changed_files(git: Git, wt, base: str) -> list[str]:
@@ -111,9 +133,18 @@ def lane_changed_files(git: Git, wt, base: str) -> list[str]:
         path = line[3:]
         if " -> " in path:  # rename: keep the new path
             path = path.split(" -> ", 1)[1]
-        changed.add(path.strip('"').rstrip("/"))
+        cleaned = path.strip('"').rstrip("/")
+        if cleaned in _ALWAYS_IGNORED_PATHS or cleaned.split("/")[0] in _ALWAYS_IGNORED_PATHS:
+            continue
+        changed.add(cleaned)
     diff = git.run(["diff", "--name-only", base], cwd=wt, mutating=False) or ""
-    changed.update(line for line in diff.splitlines() if line)
+    for line in diff.splitlines():
+        if not line:
+            continue
+        cleaned = line.strip('"').rstrip("/")
+        if cleaned in _ALWAYS_IGNORED_PATHS or cleaned.split("/")[0] in _ALWAYS_IGNORED_PATHS:
+            continue
+        changed.add(cleaned)
     return sorted(changed)
 
 
@@ -123,9 +154,24 @@ def commit_all(git: Git, wt, message: str) -> bool:
     if not status or not status.strip():
         return False
     git.run(["add", "-A"], cwd=wt)
+    for ignored in _ALWAYS_IGNORED_PATHS:
+        git.run(["reset", "HEAD", "--", ignored], cwd=wt, check=False)
+    staged = git.run(["diff", "--cached", "--name-only"], cwd=wt, mutating=False)
+    if not staged or not staged.strip():
+        return False
     git.run(["-c", "user.name=Gauntlet", "-c",
              "user.email=gauntlet@localhost", "commit", "-m", message], cwd=wt)
     return True
+
+
+def discard_changes(git: Git, wt) -> None:
+    """Drop every uncommitted change in an orchestrator-owned worktree.
+
+    Used to throw away a polish pass that broke containment or the gates:
+    everything already integrated is committed, so nothing else is at risk.
+    """
+    git.run(["reset", "--hard"], cwd=wt)
+    git.run(["clean", "-fd"], cwd=wt)
 
 
 def merge_branch(git: Git, wt, branch: str) -> None:
@@ -267,6 +313,16 @@ def check_lane_diff(changed: list[str], owns: list[str],
     return violations
 
 
+_ALWAYS_IGNORED_PATHS = {
+    "node_modules",
+    ".puppeteer-cache",
+    ".pw-browsers",
+    ".chrome-home",
+    ".gauntlet",
+    ".DS_Store",
+}
+
+
 def checkout_status(git: Git, repo) -> list[str]:
     """Paths with uncommitted changes in a checkout (porcelain -uall)."""
     out = git.run(["status", "--porcelain", "-uall"], cwd=repo,
@@ -278,7 +334,10 @@ def checkout_status(git: Git, repo) -> list[str]:
         path = line[3:]
         if " -> " in path:
             path = path.split(" -> ", 1)[1]
-        paths.append(path.strip('"').rstrip("/"))
+        cleaned = path.strip('"').rstrip("/")
+        if cleaned in _ALWAYS_IGNORED_PATHS or cleaned.split("/")[0] in _ALWAYS_IGNORED_PATHS:
+            continue
+        paths.append(cleaned)
     return sorted(paths)
 
 

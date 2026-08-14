@@ -2,6 +2,7 @@
 
 Git mutations happen only inside per-test tempdirs, never in a real repo.
 """
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -34,7 +35,7 @@ slug = "{slug}"
 [[repos]]
 path = "{repo}"
 target_branch = "main"
-gates = ["true"]
+gates = {gates}
 
 {lanes}+++
 
@@ -66,15 +67,19 @@ brief = "Lane {lid} brief."
 
 
 def write_mission(path: Path, repo: Path, *, slug: str = "example",
-                  lanes: list[dict] | None = None) -> Path:
+                  lanes: list[dict] | None = None,
+                  gates: list[str] | None = None) -> Path:
     if lanes is None:
         lanes = [{"lid": "L1", "owns": '"src/example/**"', "forbidden": ""}]
     lanes_toml = "".join(
         LANE_TEMPLATE.format(lid=l["lid"], owns=l["owns"],
                              forbidden=l.get("forbidden", ""))
         for l in lanes)
+    gates_toml = "[" + ", ".join(
+        json.dumps(g) for g in (gates if gates is not None else ["true"])) + "]"
     path.write_text(
-        MISSION_TEMPLATE.format(slug=slug, repo=repo, lanes=lanes_toml),
+        MISSION_TEMPLATE.format(slug=slug, repo=repo, lanes=lanes_toml,
+                                gates=gates_toml),
         encoding="utf-8")
     return path
 
@@ -95,7 +100,8 @@ chain = [ { harness = "human" } ]
 
 [policy]
 checkpoints = []
-max_fix_waves = 2
+max_total_waves = 5
+on_wave_cap = "checkpoint"
 idle_timeout_s = 5
 hard_timeout_s = 30
 lane_timeout_s = 30

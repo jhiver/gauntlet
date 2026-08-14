@@ -51,7 +51,7 @@ class HarnessAdapter(ABC):
     def run(self, *, capsule: Path, worktree: Path, write: bool,
             model: str | None, effort: str | None,
             hard_timeout_s: int, idle_timeout_s: int | None,
-            out_dir: Path) -> RunResult:
+            out_dir: Path, **kwargs) -> RunResult:
         """Run the harness once, blocking, and classify the outcome."""
 
     def describe(self, *, capsule: Path, worktree: Path, write: bool,
@@ -105,7 +105,7 @@ class SubprocessAdapter(HarnessAdapter):
     def run(self, *, capsule: Path, worktree: Path, write: bool,
             model: str | None, effort: str | None,
             hard_timeout_s: int, idle_timeout_s: int | None,
-            out_dir: Path) -> RunResult:
+            out_dir: Path, role: str = "", lane_id: str | None = None) -> RunResult:
         argv = self.build_argv(capsule=capsule, worktree=worktree, write=write,
                                model=model, effort=effort)
         out_dir = Path(out_dir)
@@ -114,13 +114,16 @@ class SubprocessAdapter(HarnessAdapter):
         stem = f"{Path(capsule).stem}-{self.name}-{self._counter}"
         out_path = out_dir / f"{stem}.out"
         err_path = out_dir / f"{stem}.err"
+        start_time = time.monotonic()
         try:
             with open(out_path, "wb") as out, open(err_path, "wb") as err:
                 proc = subprocess.Popen(
                     argv, cwd=str(worktree), stdin=subprocess.DEVNULL,
                     stdout=out, stderr=err)
                 timeout = self._watch(proc, out_path, hard_timeout_s,
-                                      idle_timeout_s)
+                                      idle_timeout_s, role=role,
+                                      harness=self.name, model=model or self.default_model,
+                                      lane_id=lane_id)
         except FileNotFoundError as exc:
             out_path.write_text("")
             return RunResult(FailureKind.CRASH, None, out_path,
@@ -130,6 +133,7 @@ class SubprocessAdapter(HarnessAdapter):
         if timeout is not None:
             return RunResult(timeout, None, out_path, self._tail(err_path))
         tail = self._tail(err_path)
+        dur = time.monotonic() - start_time
         if proc.returncode == 0:
             return RunResult(FailureKind.NONE, 0, out_path, tail)
         classified = self._classify(tail)
@@ -137,23 +141,32 @@ class SubprocessAdapter(HarnessAdapter):
         return RunResult(kind, proc.returncode, out_path,
                          tail or f"exit code {proc.returncode}")
 
-    @staticmethod
-    def _watch(proc, out_path: Path, hard_timeout_s: int,
-               idle_timeout_s: int | None):
+    @classmethod
+    def _watch(cls, proc, out_path: Path, hard_timeout_s: int,
+               idle_timeout_s: int | None, role: str = "",
+               harness: str = "", model: str | None = None,
+               lane_id: str | None = None):
         """Poll the child; kill on hard deadline or idle stdout. Returns the
         FailureKind on kill, None when the child exited on its own."""
         deadline = time.monotonic() + hard_timeout_s
+        start_time = time.monotonic()
         last_activity = time.monotonic()
         last_mtime = -1.0
+        from src.ui import default_ui
         while proc.poll() is None:
             now = time.monotonic()
+            elapsed = now - start_time
             if now >= deadline:
                 proc.kill()
                 proc.wait()
+                default_ui.finish_ticker()
                 return FailureKind.TIMEOUT_HARD
+            file_bytes = 0
             if idle_timeout_s:
                 try:
-                    mtime = out_path.stat().st_mtime
+                    st = out_path.stat()
+                    mtime = st.st_mtime
+                    file_bytes = st.st_size
                 except FileNotFoundError:
                     mtime = -1.0
                 if mtime != last_mtime:
@@ -162,8 +175,20 @@ class SubprocessAdapter(HarnessAdapter):
                 elif now - last_activity >= idle_timeout_s:
                     proc.kill()
                     proc.wait()
+                    default_ui.finish_ticker()
                     return FailureKind.TIMEOUT_IDLE
+            else:
+                try:
+                    file_bytes = out_path.stat().st_size
+                except FileNotFoundError:
+                    file_bytes = 0
+
+            idle_s = now - last_activity
+            default_ui.ticker(role=role or "task", harness=harness or getattr(cls, "name", "cli"),
+                              model=model, lane_id=lane_id, elapsed_s=elapsed,
+                              bytes_count=file_bytes, idle_s=idle_s)
             time.sleep(0.2)
+        default_ui.finish_ticker()
         return None
 
     @staticmethod

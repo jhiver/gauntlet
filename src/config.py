@@ -10,11 +10,12 @@ import json
 import tomllib
 from pathlib import Path
 
-ADAPTER_NAMES = {"agy", "cmd", "kimi", "reasonix", "human", "echo"}
+ADAPTER_NAMES = {"agy", "cmd", "codex", "kimi", "reasonix", "human", "echo"}
 ROLES = ("implementer", "fixer", "reviewer", "judge", "planner", "director")
 WRITE_ROLES = {"implementer", "fixer"}
 FALLBACK_ACTIONS = {"next", "next_and_break", "break",
                     "backoff_retry_then_next", "retry_once_then_next"}
+WAVE_CAP_ACTIONS = {"checkpoint", "block"}
 
 BUILTIN_DEFAULTS = {
     "harnesses": {
@@ -31,7 +32,8 @@ BUILTIN_DEFAULTS = {
     },
     "policy": {
         "checkpoints": ["plan", "deliver"],
-        "max_fix_waves": 2,
+        "max_total_waves": 5,
+        "on_wave_cap": "checkpoint",
         "idle_timeout_s": 900,
         "hard_timeout_s": 2700,
         "lane_timeout_s": 5400,
@@ -87,10 +89,21 @@ def validate_config(cfg: dict) -> None:
     for key, value in cfg.get("fallback", {}).items():
         if key.startswith("on_") and value not in FALLBACK_ACTIONS:
             raise ConfigError(f"fallback '{key}': unknown action '{value}'")
-    for key in ("max_fix_waves", "idle_timeout_s", "hard_timeout_s",
+    policy = cfg.get("policy", {})
+    if "max_fix_waves" in policy:
+        # Loud migration: a stale key would silently cap fix waves while the
+        # mission is still converging — the exact failure this replaced.
+        raise ConfigError(
+            "policy 'max_fix_waves' was replaced by 'max_total_waves' (an "
+            "absolute safety cap; fix waves are now granted while the "
+            "blocking-group count keeps falling). Rename the key.")
+    for key in ("max_total_waves", "idle_timeout_s", "hard_timeout_s",
                 "lane_timeout_s"):
-        if not isinstance(cfg.get("policy", {}).get(key), int):
+        if not isinstance(policy.get(key), int):
             raise ConfigError(f"policy '{key}' must be an integer")
+    if policy.get("on_wave_cap") not in WAVE_CAP_ACTIONS:
+        raise ConfigError(
+            f"policy 'on_wave_cap' must be one of {sorted(WAVE_CAP_ACTIONS)}")
     if not isinstance(cfg.get("fallback", {}).get("max_attempts_per_task"), int):
         raise ConfigError("fallback 'max_attempts_per_task' must be an integer")
 

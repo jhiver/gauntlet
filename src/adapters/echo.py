@@ -45,7 +45,7 @@ class EchoAdapter(HarnessAdapter):
     def run(self, *, capsule: Path, worktree: Path, write: bool,
             model: str | None, effort: str | None,
             hard_timeout_s: int, idle_timeout_s: int | None,
-            out_dir: Path) -> RunResult:
+            out_dir: Path, **kwargs) -> RunResult:
         text = Path(capsule).read_text(encoding="utf-8")
         changed: list[str] = []
         if write and Path(worktree).is_dir():
