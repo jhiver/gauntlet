@@ -606,8 +606,7 @@ class Orchestrator:
 
     def _phase_implement(self) -> None:
         role = "implementer" if self.state.wave == 0 else "fixer"
-        todo = [lane for lane in self.state.lanes
-                if lane.status in statemachine.LANE_ACTIVE]
+        todo = list(self.state.lanes)
         if not todo:
             self._transition("INSPECT")
             return
