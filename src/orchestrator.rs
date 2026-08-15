@@ -2404,7 +2404,14 @@ impl Orchestrator {
         {
             "READY_NO_CHANGE".to_string()
         } else {
-            rebase_onto(&self.git, &self.integration_wt(), &target)?;
+            if let Err(rebase_err) = rebase_onto(&self.git, &self.integration_wt(), &target) {
+                let _ = self.git.run(&["rebase", "--abort"], Some(&self.integration_wt()), true, true);
+                if let Err(merge_err) = merge_branch(&self.git, &self.integration_wt(), &target) {
+                    return Err(GauntletError::blocked(format!(
+                        "deliver integration sync failed (rebase: {rebase_err}, merge: {merge_err})"
+                    )));
+                }
+            }
 
             let out_dir = self
                 .run_dir
@@ -2433,7 +2440,9 @@ impl Orchestrator {
             if self.depth > 0 {
                 let target_wt = find_worktree_for_branch(&self.git, &repo, &target)?;
                 if let Some(t_wt) = target_wt {
-                    ff_merge(&self.git, &t_wt, &branch)?;
+                    if let Err(_) = ff_merge(&self.git, &t_wt, &branch) {
+                        merge_branch(&self.git, &t_wt, &branch)?;
+                    }
                 } else {
                     let _ = self.git.run(&["branch", "-f", &target, &branch], Some(&repo), true, true);
                 }
@@ -2444,7 +2453,9 @@ impl Orchestrator {
                         "main checkout is not on '{target}'; refusing fast-forward merge"
                     )));
                 }
-                ff_merge(&self.git, &repo, &branch)?;
+                if let Err(_) = ff_merge(&self.git, &repo, &branch) {
+                    merge_branch(&self.git, &repo, &branch)?;
+                }
             }
             "READY".to_string()
         };
