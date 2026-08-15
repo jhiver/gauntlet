@@ -37,7 +37,7 @@ use crate::verdicts::{
 };
 use crate::worktrees::{
     base_commit, branch_exists, check_claimed_vs_diff, check_lane_diff, checkout_drift,
-    checkout_status, commit_all, create_worktree, delete_branch, discard_changes, ff_merge,
+    checkout_status, commit_all, create_worktree, delete_branch, discard_changes, ensure_symlinks, ff_merge,
     find_overlaps, find_worktree_for_branch, globs_may_overlap, is_git_repo, lane_changed_files, merge_branch,
     rebase_onto, remove_worktree, rev_parse, staged_changes, tracked_files, Git, GitError,
     LaneOverlap,
@@ -413,6 +413,28 @@ impl Orchestrator {
         } else {
             self.repo_path()
         }
+    }
+
+    pub fn worktree_symlinks(&self) -> Vec<String> {
+        if let Some(toml::Value::Table(tbl)) = self.config.extra.get("worktree") {
+            if let Some(toml::Value::Array(arr)) = tbl.get("symlinks") {
+                return arr
+                    .iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect();
+            }
+        }
+        if let Ok(tbl) = self.config.to_table() {
+            if let Some(toml::Value::Table(wt_tbl)) = tbl.get("worktree") {
+                if let Some(toml::Value::Array(arr)) = wt_tbl.get("symlinks") {
+                    return arr
+                        .iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect();
+                }
+            }
+        }
+        Vec::new()
     }
 
     pub fn _save(&mut self) -> Result<(), GauntletError> {
@@ -1107,7 +1129,8 @@ impl Orchestrator {
         // Integration worktree from target branch base commit
         let wt = self.integration_wt();
         let branch = self.integration_branch();
-        create_worktree(&self.git, &repo, &wt, &branch, &self.state.base_commit)?;
+        let symlinks = self.worktree_symlinks();
+        create_worktree(&self.git, &repo, &wt, &branch, &self.state.base_commit, &symlinks)?;
 
         let wt_str = wt.to_string_lossy().to_string();
         if !self.state.worktrees.contains(&wt_str) {
@@ -1486,6 +1509,7 @@ impl Orchestrator {
             return Ok(());
         }
 
+        let symlinks = self.worktree_symlinks();
         // Provision lane worktrees serially
         for &idx in &todo_indices {
             let lane = &self.state.lanes[idx];
@@ -1498,7 +1522,10 @@ impl Orchestrator {
                     &wt,
                     &branch,
                     &self.state.base_commit,
+                    &symlinks,
                 )?;
+            } else {
+                ensure_symlinks(&self.repo_path(), &wt, &symlinks);
             }
             let wt_str = wt.to_string_lossy().to_string();
             if !self.state.worktrees.contains(&wt_str) {
@@ -2660,14 +2687,8 @@ impl Orchestrator {
                 }
             }
 
-            let src = repo.join("node_modules");
-            let dst = self.integration_wt().join("node_modules");
-            if src.exists() && !dst.exists() {
-                #[cfg(unix)]
-                {
-                    let _ = std::os::unix::fs::symlink(&src, &dst);
-                }
-            }
+            let symlinks = self.worktree_symlinks();
+            ensure_symlinks(&repo, &self.integration_wt(), &symlinks);
 
             let out_dir = self
                 .run_dir

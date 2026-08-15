@@ -10,7 +10,6 @@ use std::process::Command;
 use std::sync::Arc;
 
 pub const ALWAYS_IGNORED_PATHS: &[&str] = &[
-    "node_modules",
     ".puppeteer-cache",
     ".pw-browsers",
     ".chrome-home",
@@ -191,42 +190,58 @@ pub fn tracked_files(git: &Git, repo: &Path) -> Result<Vec<String>, GitError> {
     Ok(files)
 }
 
+pub fn ensure_symlinks(repo: &Path, wt: &Path, symlinks: &[String]) {
+    for symlink_rel in symlinks {
+        let src = repo.join(symlink_rel);
+        let dst = wt.join(symlink_rel);
+        if src.exists() && !dst.exists() {
+            if let Some(parent) = dst.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            #[cfg(unix)]
+            {
+                let _ = std::os::unix::fs::symlink(&src, &dst);
+            }
+            #[cfg(windows)]
+            {
+                if src.is_dir() {
+                    let _ = std::os::windows::fs::symlink_dir(&src, &dst);
+                } else {
+                    let _ = std::os::windows::fs::symlink_file(&src, &dst);
+                }
+            }
+        }
+    }
+}
+
 pub fn create_worktree(
     git: &Git,
     repo: &Path,
     wt: &Path,
     branch: &str,
     base: &str,
+    symlinks: &[String],
 ) -> Result<(), GitError> {
-    if wt.exists() {
-        return Ok(());
-    }
-    let b_exists = branch_exists(git, repo, branch);
-    if b_exists {
-        git.run(
-            &["worktree", "add", &wt.to_string_lossy(), branch],
-            Some(repo),
-            true,
-            true,
-        )?;
-    } else {
-        git.run(
-            &["worktree", "add", "-b", branch, &wt.to_string_lossy(), base],
-            Some(repo),
-            true,
-            true,
-        )?;
-    }
-
-    // Symlink node_modules if present in main repo
-    let src = repo.join("node_modules");
-    let dst = wt.join("node_modules");
-    if src.exists() && !dst.exists() {
-        #[cfg(unix)]
-        {
-            let _ = std::os::unix::fs::symlink(&src, &dst);
+    if !wt.exists() {
+        let b_exists = branch_exists(git, repo, branch);
+        if b_exists {
+            git.run(
+                &["worktree", "add", &wt.to_string_lossy(), branch],
+                Some(repo),
+                true,
+                true,
+            )?;
+        } else {
+            git.run(
+                &["worktree", "add", "-b", branch, &wt.to_string_lossy(), base],
+                Some(repo),
+                true,
+                true,
+            )?;
         }
     }
+
+    ensure_symlinks(repo, wt, symlinks);
     Ok(())
 }
 
@@ -290,6 +305,14 @@ pub fn lane_changed_files(git: &Git, wt: &Path, base: &str) -> Result<Vec<String
         if ALWAYS_IGNORED_PATHS.contains(&cleaned) || ALWAYS_IGNORED_PATHS.contains(&first_seg) {
             continue;
         }
+        let is_sym = |p: &str| -> bool {
+            std::fs::symlink_metadata(wt.join(p))
+                .map(|m| m.file_type().is_symlink())
+                .unwrap_or(false)
+        };
+        if is_sym(cleaned) || is_sym(first_seg) {
+            continue;
+        }
         if !cleaned.is_empty() {
             changed.insert(cleaned.to_string());
         }
@@ -304,6 +327,14 @@ pub fn lane_changed_files(git: &Git, wt: &Path, base: &str) -> Result<Vec<String
         let cleaned = line.trim_matches('"').trim_end_matches('/');
         let first_seg = cleaned.split('/').next().unwrap_or("");
         if ALWAYS_IGNORED_PATHS.contains(&cleaned) || ALWAYS_IGNORED_PATHS.contains(&first_seg) {
+            continue;
+        }
+        let is_sym = |p: &str| -> bool {
+            std::fs::symlink_metadata(wt.join(p))
+                .map(|m| m.file_type().is_symlink())
+                .unwrap_or(false)
+        };
+        if is_sym(cleaned) || is_sym(first_seg) {
             continue;
         }
         if !cleaned.is_empty() {
@@ -325,6 +356,21 @@ pub fn commit_all(git: &Git, wt: &Path, message: &str) -> Result<bool, GitError>
 
     for ignored in ALWAYS_IGNORED_PATHS {
         let _ = git.run(&["reset", "HEAD", "--", ignored], Some(wt), true, false);
+    }
+
+    let staged_out = git.run(&["diff", "--cached", "--name-only"], Some(wt), false, true)?;
+    for line in staged_out.unwrap_or_default().lines() {
+        let p = line.trim();
+        let cleaned = p.trim_matches('"').trim_end_matches('/');
+        let first_seg = cleaned.split('/').next().unwrap_or("");
+        let is_sym = |rel: &str| -> bool {
+            std::fs::symlink_metadata(wt.join(rel))
+                .map(|m| m.file_type().is_symlink())
+                .unwrap_or(false)
+        };
+        if is_sym(cleaned) || is_sym(first_seg) {
+            let _ = git.run(&["reset", "HEAD", "--", cleaned], Some(wt), true, false);
+        }
     }
 
     let staged = git.run(&["diff", "--cached", "--name-only"], Some(wt), false, true)?;
@@ -387,6 +433,14 @@ pub fn checkout_status(git: &Git, repo: &Path) -> Result<Vec<String>, GitError> 
         let cleaned = path.trim_matches('"').trim_end_matches('/');
         let first_seg = cleaned.split('/').next().unwrap_or("");
         if ALWAYS_IGNORED_PATHS.contains(&cleaned) || ALWAYS_IGNORED_PATHS.contains(&first_seg) {
+            continue;
+        }
+        let is_sym = |p: &str| -> bool {
+            std::fs::symlink_metadata(repo.join(p))
+                .map(|m| m.file_type().is_symlink())
+                .unwrap_or(false)
+        };
+        if is_sym(cleaned) || is_sym(first_seg) {
             continue;
         }
         if !cleaned.is_empty() {
