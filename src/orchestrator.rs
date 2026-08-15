@@ -377,8 +377,6 @@ impl Orchestrator {
     pub fn log(&self, message: &str) {
         if let Some(ref l) = self.log_fn {
             l(message);
-        } else {
-            println!("{message}");
         }
     }
 
@@ -813,6 +811,19 @@ impl Orchestrator {
                 }
 
                 attempts += 1;
+                let model_str = link.model.as_deref().unwrap_or("default");
+                if let Ok(mut ui) = default_ui().lock() {
+                    let target_desc = if let Some(lid) = lane_id {
+                        format!(" [{lid}]")
+                    } else {
+                        String::new()
+                    };
+                    ui.info(&format!(
+                        "Running {role}{target_desc} via {}/{} (attempt {}/{})...",
+                        link.harness, model_str, attempts, fallback_policy.max_attempts_per_task
+                    ));
+                }
+
                 let mut result = self.execute_harness(
                     link,
                     capsule,
@@ -839,6 +850,12 @@ impl Orchestrator {
                 }
 
                 if result.failure == FailureKind::None {
+                    if let Ok(mut ui) = default_ui().lock() {
+                        ui.success(
+                            &format!("{role} completed via {}/{}", link.harness, model_str),
+                            "",
+                        );
+                    }
                     if hname != "human" {
                         self.health.close(hname);
                     }
@@ -847,6 +864,11 @@ impl Orchestrator {
                         harness: hname.clone(),
                         attempts,
                     });
+                } else if let Ok(mut ui) = default_ui().lock() {
+                    ui.warning(
+                        &format!("{role} failed on {}/{}: {}", link.harness, model_str, result.failure.as_str()),
+                        &result.detail,
+                    );
                 }
 
                 self.log(&format!(
@@ -1169,6 +1191,14 @@ impl Orchestrator {
                     "config error: pre-written lane owns globs overlap: {overlaps:?}"
                 )));
             }
+
+            if let Ok(mut ui) = default_ui().lock() {
+                ui.info(&format!("Loaded {} orthogonal implementation lane(s):", self.state.lanes.len()));
+                for l in &self.state.lanes {
+                    ui.subitem(&format!("[{}] \"{}\" → owns: {:?}", l.id, l.brief, l.owns));
+                }
+            }
+
             let summary = self
                 .state
                 .lanes
@@ -1470,6 +1500,19 @@ impl Orchestrator {
         self.main_before = checkout_status(&self.git, &self.repo_path())?;
 
         // Execute workers across threads
+        if let Ok(mut ui) = default_ui().lock() {
+            let n = todo_indices.len();
+            ui.info(&format!("Executing {n} lane(s) in parallel isolated worktrees..."));
+            for &idx in &todo_indices {
+                let l = &self.state.lanes[idx];
+                let model_str = self.config.roles.get(role)
+                    .and_then(|r| r.chain.first())
+                    .map(|c| format!("{} ({})", c.harness, c.model.as_deref().unwrap_or("default")))
+                    .unwrap_or_else(|| "default".to_string());
+                ui.subitem(&format!("[{}] \"{}\" → owns: {:?}, model: {}", l.id, l.brief, l.owns, model_str));
+            }
+        }
+
         let mut handles = Vec::new();
         for &idx in &todo_indices {
             let lane = self.state.lanes[idx].clone();
@@ -1484,6 +1527,11 @@ impl Orchestrator {
             let health = Arc::clone(&self.health);
 
             let handle = thread::spawn(move || -> (usize, String, String, Vec<String>) {
+                let start_time = std::time::Instant::now();
+                if let Ok(mut ui) = default_ui().lock() {
+                    ui.step("WORKER", &format!("[{}] Dispatched worker to worktree", lane.id), "");
+                }
+
                 let capsule_text = capsules::implementer(
                     &mission,
                     &Lane {
@@ -1632,6 +1680,21 @@ impl Orchestrator {
                     }
                 }
 
+                let elapsed_s = start_time.elapsed().as_secs_f64();
+                if status == "done" {
+                    if let Ok(mut ui) = default_ui().lock() {
+                        ui.success(
+                            &format!("[{}] Worker completed in {:.1}s", lane.id, elapsed_s),
+                            &format!("{} file(s) claimed", claimed.len()),
+                        );
+                    }
+                } else if let Ok(mut ui) = default_ui().lock() {
+                    ui.error(
+                        &format!("[{}] Worker failed in {:.1}s", lane.id, elapsed_s),
+                        &detail,
+                    );
+                }
+
                 (idx, status, detail, claimed)
             });
 
@@ -1676,6 +1739,10 @@ impl Orchestrator {
     }
 
     pub fn _phase_inspect(&mut self) -> Result<(), GauntletError> {
+        if let Ok(mut ui) = default_ui().lock() {
+            ui.info("Verifying lane diffs against ownership globs and baseline drift...");
+        }
+
         let current_checkout = checkout_status(&self.git, &self.repo_path())?;
         let drift = checkout_drift(&self.main_before, &current_checkout, Some(&[".missions/"]));
         if !drift.is_empty() {
@@ -1794,6 +1861,10 @@ impl Orchestrator {
     }
 
     pub fn _phase_integrate(&mut self) -> Result<(), GauntletError> {
+        if let Ok(mut ui) = default_ui().lock() {
+            ui.info("Integrating approved lane worktrees into candidate branch...");
+        }
+
         let mut integrated = Vec::new();
         let repo_base = self.state.repo.clone();
         let run_id = self.state.run_id.clone();
@@ -1831,6 +1902,14 @@ impl Orchestrator {
             }
             self.state.lanes[i].status = "integrated".to_string();
             self._save()?;
+        }
+
+        if let Ok(mut ui) = default_ui().lock() {
+            if integrated.is_empty() {
+                ui.success("Integration: zero code diffs to merge", "");
+            } else {
+                ui.success(&format!("Merged {} lane(s) into candidate branch", integrated.len()), &integrated.join(", "));
+            }
         }
 
         if let Some(ref report) = self.report {
@@ -2547,6 +2626,10 @@ impl Orchestrator {
         let target = self.state.target_branch.clone();
         let branch = self.integration_branch();
         let head = rev_parse(&self.git, &repo, &branch);
+
+        if let Ok(mut ui) = default_ui().lock() {
+            ui.info(&format!("Rebasing candidate branch onto '{target}' and verifying delivery..."));
+        }
 
         let final_phase = if !self.state.integrated_changes
             || head.is_none()

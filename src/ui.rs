@@ -90,7 +90,7 @@ impl UI {
         title: &str,
         subtitle: Option<&str>,
         meta: Option<&[(&str, &str)]>,
-        width: usize,
+        _width: usize,
     ) {
         self.clear_ticker();
         let c_border = CYAN;
@@ -99,30 +99,25 @@ impl UI {
         let c_key = CYAN;
         let c_val = BRIGHT_CYAN;
 
-        let top = self.color(&format!("╭{}╮", "─".repeat(width.saturating_sub(2))), &[c_border]);
-        let bot = self.color(&format!("╰{}╯", "─".repeat(width.saturating_sub(2))), &[c_border]);
+        let top = self.color("╭── ", &[c_border]);
+        let top_title = self.color(title, c_title);
+        let top_bar = self.color(" ───────────────────────────────────────────────────", &[c_border]);
         let v = self.color("│", &[c_border]);
+        let bot = self.color("╰─────────────────────────────────────────────────────────────", &[c_border]);
 
-        let mut lines = vec![top];
-        
-        let title_colored = self.color(title, c_title);
-        let title_padding = width.saturating_sub(4 + title.len());
-        lines.push(format!("{v} {title_colored}{} {v}", " ".repeat(title_padding)));
+        let mut lines = vec![format!("{top}{top_title}{top_bar}")];
 
         if let Some(sub) = subtitle {
             let sub_colored = self.color(sub, c_sub);
-            let sub_padding = width.saturating_sub(4 + sub.len());
-            lines.push(format!("{v} {sub_colored}{} {v}", " ".repeat(sub_padding)));
+            lines.push(format!("{v}  {sub_colored}"));
         }
 
         if let Some(meta_items) = meta {
-            lines.push(format!("{v} {} {v}", " ".repeat(width.saturating_sub(4))));
+            lines.push(v.to_string());
             for (k, val) in meta_items {
                 let k_col = self.color(k, &[c_key]);
                 let val_col = self.color(val, &[c_val]);
-                let raw_len = 4 + k.len() + 2 + val.len(); // "  • " + k + ": " + val
-                let padding = width.saturating_sub(4 + raw_len);
-                lines.push(format!("{v}   • {k_col}: {val_col}{} {v}", " ".repeat(padding)));
+                lines.push(format!("{v}  • {k_col}: {val_col}"));
             }
         }
 
@@ -135,7 +130,7 @@ impl UI {
         phase: &str,
         wave: usize,
         detail: Option<&str>,
-        width: usize,
+        _width: usize,
     ) {
         self.clear_ticker();
         let color = match phase {
@@ -185,20 +180,14 @@ impl UI {
 
         let title = format!("{icon}  PHASE: {phase}{wave_str}");
         let title_colored = self.color(&title, &[BOLD, color]);
-        let line_len = width.saturating_sub(title.len() + 4);
-        let c_line = self.color(&"─".repeat(line_len), &[DIM, WHITE]);
-        let corner_left = self.color("╭──", &[color]);
-        let corner_right = self.color("╮", &[color]);
+        let line = self.color(" ───────────────────────────────────────────────────", &[DIM, color]);
+        let prefix = self.color("╭──", &[color]);
 
-        self.print_line(&format!("\n{corner_left} {title_colored} {c_line}{corner_right}"));
+        self.print_line(&format!("\n{prefix} {title_colored}{line}"));
         if let Some(det) = detail {
             let v = self.color("│", &[color]);
             let det_col = self.color(det, &[DIM, WHITE]);
-            let corner_bl = self.color("╰", &[color]);
-            let corner_br = self.color("╯", &[color]);
-            let line_bot = self.color(&"─".repeat(width.saturating_sub(2)), &[color]);
             self.print_line(&format!("{v}  {det_col}"));
-            self.print_line(&format!("{corner_bl}{line_bot}{corner_br}"));
         }
     }
 
@@ -208,29 +197,35 @@ impl UI {
         total: usize,
         slug: &str,
         brief: &str,
-        width: usize,
+        _width: usize,
     ) {
         self.clear_ticker();
         let badge = format!("📦 STAGE [{index}/{total}]: {slug}");
         let badge_colored = self.color(&badge, &[BOLD, BRIGHT_CYAN]);
-        let line_len = width.saturating_sub(badge.len() + 6).max(2);
-        let c_line = self.color(&"─".repeat(line_len), &[DIM, BRIGHT_BLUE]);
+        let c_line = self.color(" ───────────────────────────────────────────────────", &[DIM, BRIGHT_BLUE]);
         let corner_tl = self.color("╭──", &[BRIGHT_BLUE]);
-        let corner_tr = self.color("╮", &[BRIGHT_BLUE]);
-        let corner_bl = self.color("╰", &[BRIGHT_BLUE]);
-        let corner_br = self.color("╯", &[BRIGHT_BLUE]);
-        let line_bot = self.color(&"─".repeat(width.saturating_sub(2)), &[BRIGHT_BLUE]);
         let v = self.color("│", &[BRIGHT_BLUE]);
 
-        self.print_line(&format!("\n{corner_tl} {badge_colored} {c_line}{corner_tr}"));
+        self.print_line(&format!("\n{corner_tl} {badge_colored}{c_line}"));
         if !brief.is_empty() {
             let brief_col = self.color(brief, &[WHITE]);
             self.print_line(&format!("{v}  {brief_col}"));
         }
-        self.print_line(&format!("{corner_bl}{line_bot}{corner_br}"));
     }
 
     // --------------------------------------------------------- Progress & Logs
+
+    pub fn info(&mut self, message: &str) {
+        self.clear_ticker();
+        let icon = self.color("▶", &[BOLD, BRIGHT_BLUE]);
+        self.print_line(&format!("  {icon} {message}"));
+    }
+
+    pub fn subitem(&mut self, text: &str) {
+        self.clear_ticker();
+        let dot = self.color("•", &[DIM, WHITE]);
+        self.print_line(&format!("    {dot} {text}"));
+    }
 
     pub fn step(&mut self, label: &str, message: &str, detail: &str) {
         self.clear_ticker();
