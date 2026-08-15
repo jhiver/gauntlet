@@ -1,0 +1,62 @@
+# Gauntlet CommandCode.ai Configuration
+# Uses Command Code CLI (`cmd`) across all roles with model routing
+
+[harnesses.cmd]
+adapter = "cmd"
+supports_write = true
+default_model = "claude-sonnet-5"
+[harnesses.cmd.errors]
+quota = ["insufficient[_ ]quota", "credit", "402", "429"]
+auth  = ["unauthorized", "401", "not logged in"]
+model_unavailable = ["MODEL_NOT_IN_PLAN", "model is not available", "Unknown effort"]
+
+[roles.implementer]
+chain = [
+  { harness = "cmd", model = "claude-sonnet-5" },
+  { harness = "cmd", model = "gpt-5.6-luna", effort = "high" },
+]
+
+[roles.fixer]
+chain = [
+  { harness = "cmd", model = "claude-sonnet-5" },
+  { harness = "cmd", model = "gpt-5.6-sol", effort = "high" },
+]
+
+[roles.reviewer]
+chain = [
+  { harness = "cmd", model = "gpt-5.6-sol", effort = "high" },
+  { harness = "cmd", model = "deepseek/deepseek-v4-pro" },
+]
+
+[roles.judge]
+chain = [
+  { harness = "cmd", model = "gpt-5.6-sol", effort = "high" },
+  { harness = "cmd", model = "claude-sonnet-5" },
+]
+
+[roles.planner]
+chain = [
+  { harness = "cmd", model = "claude-sonnet-5" },
+  { harness = "cmd", model = "gpt-5.6-sol", effort = "high" },
+]
+
+[roles.director]
+chain = [{ harness = "human" }]
+
+[policy]
+checkpoints = ["plan", "deliver"]
+max_total_waves = 5
+on_wave_cap = "checkpoint"
+idle_timeout_s = 900
+hard_timeout_s = 3600
+lane_timeout_s = 7200
+
+[fallback]
+on_quota = "next_and_break"
+on_auth = "break"
+on_rate_limit = "backoff_retry_then_next"
+on_model_unavailable = "next"
+on_timeout = "retry_once_then_next"
+on_crash = "retry_once_then_next"
+on_invalid_output = "retry_once_then_next"
+max_attempts_per_task = 3
