@@ -881,7 +881,15 @@ impl Orchestrator {
     }
 
     pub fn _ask_human(&mut self, name: &str, context: &str) -> bool {
-        if self.auto {
+        let is_human_only = self
+            .config
+            .roles
+            .get("director")
+            .and_then(|r| r.chain.first())
+            .map(|l| l.harness == "human")
+            .unwrap_or(true);
+
+        if self.auto && is_human_only {
             return false;
         }
         let capsule_text = capsules::checkpoint(name, context);
@@ -1662,6 +1670,8 @@ impl Orchestrator {
         };
 
         let mut rejected_lanes = Vec::new();
+        let mut pruned_logs = Vec::new();
+        let mut pruned_files = Vec::new();
         for lane in &mut self.state.lanes {
             if lane.status != "done" {
                 continue;
@@ -1673,6 +1683,39 @@ impl Orchestrator {
             let mut violations = check_lane_diff(&lane.changed, &lane.owns, &lane.forbidden);
             violations.extend(check_claimed_vs_diff(&lane.claimed, &lane.changed));
 
+            if !violations.is_empty() && self.config.policy.on_blocked == "auto_heal" {
+                let unowned: Vec<String> = lane
+                    .changed
+                    .iter()
+                    .filter(|p| {
+                        !lane.owns.iter().any(|g| crate::worktrees::glob_matches(g, p))
+                            || lane.forbidden.iter().any(|g| crate::worktrees::glob_matches(g, p))
+                    })
+                    .cloned()
+                    .collect();
+
+                if !unowned.is_empty() {
+                    for un_path in &unowned {
+                        let _ = self.git.run(&["checkout", "--", un_path], Some(&wt), false, false);
+                        let full_un = wt.join(un_path);
+                        if full_un.is_file() {
+                            let _ = std::fs::remove_file(&full_un);
+                        }
+                        if !pruned_files.contains(un_path) {
+                            pruned_files.push(un_path.clone());
+                        }
+                    }
+                    pruned_logs.push(format!(
+                        "  [AUTO_HEAL] Auto-pruned unowned file(s) from Lane {}: {}",
+                        lane.id,
+                        unowned.join(", ")
+                    ));
+                    lane.changed = lane_changed_files(&self.git, &wt, &base)?;
+                    violations = check_lane_diff(&lane.changed, &lane.owns, &lane.forbidden);
+                    violations.extend(check_claimed_vs_diff(&lane.claimed, &lane.changed));
+                }
+            }
+
             if !violations.is_empty() {
                 lane.status = "rejected".to_string();
                 lane.detail = violations.join("; ");
@@ -1680,6 +1723,15 @@ impl Orchestrator {
             } else {
                 lane.detail = format!("{} file(s) changed", lane.changed.len());
             }
+        }
+
+        for p_file in pruned_files {
+            if !self.state.safety_pruned_files.contains(&p_file) {
+                self.state.safety_pruned_files.push(p_file);
+            }
+        }
+        for log_msg in pruned_logs {
+            self.log(&log_msg);
         }
         self._save()?;
 
@@ -1810,6 +1862,57 @@ impl Orchestrator {
                 .map(|r| format!("{} ({})", r.command, r.detail))
                 .collect::<Vec<_>>()
                 .join("; ");
+
+            if self.config.policy.on_blocked == "auto_heal"
+                && self.state.gate_auto_heal_attempts < self.config.policy.auto_heal_budget
+            {
+                self.state.gate_auto_heal_attempts += 1;
+                self.state.auto_heal_attempts += 1;
+                let attempt = self.state.gate_auto_heal_attempts;
+                let max_b = self.config.policy.auto_heal_budget;
+                self.log(&format!(
+                    "  [AUTO_HEAL] Gate failure detected: {fail_str}. Triggering auto-fix wave ({attempt}/{max_b})..."
+                ));
+
+                let synthetic_findings = vec![crate::verdicts::ClaimGroup {
+                    contract_ids: vec!["GATES".to_string()],
+                    defect_class: crate::verdicts::CODE_DEFECT.to_string(),
+                    verdict: "FIX".to_string(),
+                    root_cause: format!("Deterministic gate failure: {fail_str}"),
+                    claims: vec![format!("Gate failed: {fail_str}")],
+                    fix: format!("Resolve deterministic gate failure: {fail_str}"),
+                    owns: String::new(),
+                }];
+
+                let findings_json = serde_json::to_string_pretty(&synthetic_findings)
+                    .unwrap_or_else(|_| "[]".to_string());
+
+                if let Some(ref report) = self.report {
+                    let _ = report.section(
+                        "AUTO_HEAL_GATE",
+                        &format!(
+                            "Attempt {attempt}/{max_b}: Gate failure auto-remediated into FIX wave.\n\n```json\n{findings_json}\n```"
+                        ),
+                    );
+                }
+
+                if let Some(d) = &self.run_dir {
+                    let judgment_path = d.join("verdicts").join(format!("judgment-w{}.json", self.state.wave));
+                    let _ = std::fs::write(&judgment_path, format!("{findings_json}\n"));
+                    self.state.judgments = Self::slot(
+                        &self.state.judgments,
+                        self.state.wave,
+                        judgment_path.to_string_lossy().to_string(),
+                    );
+                }
+
+                self.pending_groups = synthetic_findings;
+
+                self.state.wave += 1;
+                self._save()?;
+                return self._transition("PLAN_FIX");
+            }
+
             return Err(GauntletError::new(
                 format!("required gate(s) failed: {fail_str}"),
                 "BLOCKED_GATE",
@@ -2006,22 +2109,33 @@ impl Orchestrator {
         }
 
         if decision == STALLED {
-            let context = format!(
-                "convergence stalled: {} blocking group(s) after {} fix wave(s); trajectory {} did not beat its own best round.\napprove to grant one more fix wave anyway",
-                blocking.len(),
-                self.state.wave,
-                trajectory
-            );
-            if self.config.policy.on_wave_cap != "checkpoint" || !self._ask_human("wave-cap", &context) {
-                return Err(GauntletError::new(
-                    format!(
-                        "convergence stalled: {} blocking group(s) left, trajectory {trajectory}",
-                        blocking.len()
-                    ),
-                    kind,
+            if self.config.policy.on_blocked == "auto_heal"
+                && self.state.auto_heal_attempts < self.config.policy.auto_heal_budget
+            {
+                self.state.auto_heal_attempts += 1;
+                let attempt = self.state.auto_heal_attempts;
+                let max_b = self.config.policy.auto_heal_budget;
+                self.log(&format!(
+                    "  [AUTO_HEAL] Convergence stalled. Auto-healing fix wave granted ({attempt}/{max_b})..."
                 ));
+            } else {
+                let context = format!(
+                    "convergence stalled: {} blocking group(s) after {} fix wave(s); trajectory {} did not beat its own best round.\napprove to grant one more fix wave anyway",
+                    blocking.len(),
+                    self.state.wave,
+                    trajectory
+                );
+                if self.config.policy.on_wave_cap != "checkpoint" || !self._ask_human("wave-cap", &context) {
+                    return Err(GauntletError::new(
+                        format!(
+                            "convergence stalled: {} blocking group(s) left, trajectory {trajectory}",
+                            blocking.len()
+                        ),
+                        kind,
+                    ));
+                }
+                self.log("director granted one more fix wave despite the stall");
             }
-            self.log("director granted one more fix wave despite the stall");
         }
 
         self.state.wave += 1;
@@ -2052,7 +2166,19 @@ impl Orchestrator {
             let mut owns = if !g.owns.is_empty() {
                 vec![g.owns.clone()]
             } else {
-                Vec::new()
+                let mut all_owns = Vec::new();
+                for l in &self.state.lanes {
+                    for o in &l.owns {
+                        if !all_owns.contains(o) {
+                            all_owns.push(o.clone());
+                        }
+                    }
+                }
+                if all_owns.is_empty() {
+                    vec!["src/**".to_string(), "tests/**".to_string()]
+                } else {
+                    all_owns
+                }
             };
             if let Some(first_own) = owns.first() {
                 if first_own.starts_with("lib/") {
@@ -2449,7 +2575,7 @@ impl Orchestrator {
             if self.depth > 0 {
                 let target_wt = find_worktree_for_branch(&self.git, &repo, &target)?;
                 if let Some(t_wt) = target_wt {
-                    if let Err(_) = ff_merge(&self.git, &t_wt, &branch) {
+                    if ff_merge(&self.git, &t_wt, &branch).is_err() {
                         merge_branch(&self.git, &t_wt, &branch)?;
                     }
                 } else {
@@ -2462,7 +2588,7 @@ impl Orchestrator {
                         "main checkout is not on '{target}'; refusing fast-forward merge"
                     )));
                 }
-                if let Err(_) = ff_merge(&self.git, &repo, &branch) {
+                if ff_merge(&self.git, &repo, &branch).is_err() {
                     merge_branch(&self.git, &repo, &branch)?;
                 }
             }

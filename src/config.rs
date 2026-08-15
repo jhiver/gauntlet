@@ -68,6 +68,8 @@ pub struct RoleConfig {
     pub chain: Vec<ChainLink>,
 }
 
+pub const BLOCKED_ACTIONS: &[&str] = &["halt", "auto_heal", "director"];
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PolicyConfig {
     #[serde(default = "default_checkpoints")]
@@ -76,6 +78,10 @@ pub struct PolicyConfig {
     pub max_total_waves: usize,
     #[serde(default = "default_on_wave_cap")]
     pub on_wave_cap: String,
+    #[serde(default = "default_on_blocked")]
+    pub on_blocked: String,
+    #[serde(default = "default_auto_heal_budget")]
+    pub auto_heal_budget: usize,
     #[serde(default = "default_idle_timeout_s")]
     pub idle_timeout_s: u64,
     #[serde(default = "default_hard_timeout_s")]
@@ -94,6 +100,12 @@ fn default_max_total_waves() -> usize {
 }
 fn default_on_wave_cap() -> String {
     "checkpoint".to_string()
+}
+fn default_on_blocked() -> String {
+    "auto_heal".to_string()
+}
+fn default_auto_heal_budget() -> usize {
+    2
 }
 fn default_idle_timeout_s() -> u64 {
     900
@@ -157,6 +169,8 @@ impl Default for PolicyConfig {
             checkpoints: default_checkpoints(),
             max_total_waves: default_max_total_waves(),
             on_wave_cap: default_on_wave_cap(),
+            on_blocked: default_on_blocked(),
+            auto_heal_budget: default_auto_heal_budget(),
             idle_timeout_s: default_idle_timeout_s(),
             hard_timeout_s: default_hard_timeout_s(),
             lane_timeout_s: default_lane_timeout_s(),
@@ -258,6 +272,8 @@ chain = [ { harness = "human" } ]
 checkpoints = ["plan", "deliver"]
 max_total_waves = 5
 on_wave_cap = "checkpoint"
+on_blocked = "auto_heal"
+auto_heal_budget = 2
 idle_timeout_s = 900
 hard_timeout_s = 2700
 lane_timeout_s = 5400
@@ -423,6 +439,22 @@ pub fn validate_config(cfg: &toml::Table) -> Result<(), ConfigError> {
             return Err(ConfigError::Message(
                 "policy 'on_wave_cap' must be one of [\"block\", \"checkpoint\"]".to_string(),
             ));
+        }
+        if let Some(on_blocked_val) = policy.get("on_blocked") {
+            let on_blocked = on_blocked_val.as_str().unwrap_or("");
+            let blocked_set: HashSet<&str> = BLOCKED_ACTIONS.iter().copied().collect();
+            if !blocked_set.contains(on_blocked) {
+                return Err(ConfigError::Message(
+                    "policy 'on_blocked' must be one of [\"halt\", \"auto_heal\", \"director\"]".to_string(),
+                ));
+            }
+        }
+        if let Some(val) = policy.get("auto_heal_budget") {
+            if val.as_integer().is_none() {
+                return Err(ConfigError::Message(
+                    "policy 'auto_heal_budget' must be an integer".to_string(),
+                ));
+            }
         }
     }
 

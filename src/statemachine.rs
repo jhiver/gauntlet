@@ -193,6 +193,12 @@ pub struct State {
     pub auto: bool,
     #[serde(default)]
     pub dry_run: bool,
+    #[serde(default)]
+    pub auto_heal_attempts: usize,
+    #[serde(default)]
+    pub gate_auto_heal_attempts: usize,
+    #[serde(default)]
+    pub safety_pruned_files: Vec<String>,
 }
 
 fn default_phase() -> String {
@@ -230,6 +236,9 @@ impl Default for State {
             blocked_phase: None,
             auto: false,
             dry_run: false,
+            auto_heal_attempts: 0,
+            gate_auto_heal_attempts: 0,
+            safety_pruned_files: Vec::new(),
         }
     }
 }

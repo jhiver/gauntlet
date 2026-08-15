@@ -45,6 +45,9 @@ fn test_state_round_trip() {
         blocked_kind: None,
         blocked_phase: None,
         harness_health: Default::default(),
+        auto_heal_attempts: 0,
+        gate_auto_heal_attempts: 0,
+        safety_pruned_files: Vec::new(),
     };
 
     save(&state).unwrap();

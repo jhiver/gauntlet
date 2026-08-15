@@ -5,15 +5,16 @@
 ### *Autonomous Multi-Agent Software Engineering with Mechanical Containment & Mathematical Convergence*
 
 [![Rust](https://img.shields.io/badge/Rust-1.80+-orange.svg?logo=rust)](https://www.rust-lang.org)
-[![Tests](https://img.shields.io/badge/Tests-136%20passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-140%20passed-brightgreen.svg)]()
 [![Safety](https://img.shields.io/badge/Zero--Unwrap-100%25%20Crash--Resilient-blue.svg)]()
-[![Engine](https://img.shields.io/badge/Engine-Pure%20Rust%20(Zero--Panic)-blueviolet.svg)]()
+[![Self-Healing](https://img.shields.io/badge/Auto--Healing-Bounded%20Recovery-blueviolet.svg)]()
 [![License](https://img.shields.io/badge/License-MIT%2FApache--2.0-blue.svg)]()
 
 [The Vision](#-the-vision) •
 [The 5 Core Roles](#-the-5-core-roles) •
 [Supported Harnesses](#-supported-harness-adapters) •
 [Configurable Synergy](#-configurable-multi-model--multi-harness-synergy) •
+[Self-Healing & Remediation](#-self-healing--autonomous-remediation) •
 [State Machine Workflow](#-state-machine-lifecycle) •
 [Quickstart](#-quickstart) •
 [Skills](#-skills-integration)
@@ -212,6 +213,26 @@ max_attempts_per_task = 3
 
 ---
 
+## 🛠️ Self-Healing & Autonomous Remediation
+
+Autonomous engineering often fails when a minor defect (a lint error, a missing test file, or an accidental touch of an unowned file) causes a hard crash. Gauntlet Engine features a **bounded self-healing engine** (`[policy.on_blocked]`):
+
+| Self-Healing Trigger | Autonomous Remediation Action | Budget & Safety Bound |
+| :--- | :--- | :--- |
+| **`AUTO_PRUNE_SAFETY`** | If a worker modifies or creates files outside its `owns` scope, Gauntlet mechanically reverts the unowned files (`git checkout -- <file>`) and re-runs containment checks. | Zero-leakage: if unowned edits cannot be cleanly isolated, lane is rejected. |
+| **`AUTO_GATE_FIX`** | If deterministic gates (`cargo test`, `cargo clippy`) fail during integration, compiler and test errors are synthesized into structured `FIX` finding groups (`contract_id: "GATES"`), launching an autonomous fix wave. | Bounded by `auto_heal_budget` (default: 2 attempts) to prevent infinite loops. |
+| **`STALL_SYNTHESIS`** | If defect counts stall or oscillate, Gauntlet grants an auto-healing synthesis wave with prior failure context before hard-blocking. | Strictly bounded by `max_total_waves` and `auto_heal_budget`. |
+| **`AI_DIRECTOR_FALLBACK`** | When `on_blocked = "director"`, an AI model in the director chain (e.g. `gpt-5.6-sol`, `claude-sonnet-5`) autonomously evaluates failure diagnostics and decides whether to grant a wave or halt. | Configurable chain: AI Model $\to$ Human Fallback. |
+
+### Configuration Options
+```toml
+[policy]
+on_blocked = "auto_heal"      # "auto_heal" (autonomous repair), "director" (AI/Human triage), "halt" (strict CI)
+auto_heal_budget = 2          # Maximum auto-remediation attempts before terminal halt
+```
+
+---
+
 ## 🔄 State Machine Lifecycle
 
 Gauntlet Engine runs a deterministic finite state machine where every transition is recorded in `state.json` and `report.md`:
@@ -230,18 +251,23 @@ flowchart TD
     
     IMP --> INSP["<b>INSPECT</b><br><i>Verify owns & drift</i>"]
     INSP -->|"Pass"| INT["<b>INTEGRATE</b><br><i>Merge into integration branch</i>"]
-    INSP -->|"Containment Breach"| B_SAFE["<b>✖ BLOCKED_SAFETY</b><br><i>Drift / Forbidden edit</i>"]
+    INSP -->|"Unowned Diffs"| AP_SAFE["<b>🛠 AUTO-PRUNE SAFETY</b><br><i>Revert unowned files & recheck</i>"]
+    AP_SAFE -->|"Clean"| INT
+    AP_SAFE -->|"Unresolvable"| B_SAFE["<b>✖ BLOCKED_SAFETY</b>"]
     
     INT --> GATES["<b>GATES</b><br><i>Run deterministic test suite</i>"]
     GATES -->|"Pass"| REV["<b>REVIEW</b><br><i>Adversarial code audit</i>"]
-    GATES -->|"Fail"| B_GATE["<b>✖ BLOCKED_GATE</b><br><i>Gate failure</i>"]
+    GATES -->|"Gate Failure"| AG_GATE["<b>🛠 AUTO-GATE FIX</b><br><i>Synthesize FIX group & wave</i>"]
+    AG_GATE -->|"Auto-Heal Wave"| PFIX["<b>PLAN_FIX</b><br><i>Coalesce & Re-slice lanes</i>"]
+    AG_GATE -->|"Budget Exhausted"| B_GATE["<b>✖ BLOCKED_GATE</b>"]
     
     REV --> JUDGE["<b>JUDGE</b><br><i>Batch root-cause judgment</i>"]
     
     JUDGE -->|"No Blocking Claims"| POLISH["<b>POLISH</b><br><i>Clean candidate pass</i>"]
-    JUDGE -->|"Defects to Fix (Wave N+1)"| PFIX["<b>PLAN_FIX</b><br><i>Coalesce & Re-slice lanes</i>"]
-    JUDGE -->|"Stalled / Oscillating"| B_CONV["<b>✖ BLOCKED_CONVERGENCE</b><br><i>Defect count did not drop</i>"]
-    JUDGE -->|"REDESIGN Verdict"| B_ARCH["<b>✖ BLOCKED_ARCHITECTURE</b><br><i>Architectural redesign</i>"]
+    JUDGE -->|"Defects to Fix (Wave N+1)"| PFIX
+    JUDGE -->|"Stalled / Redesign"| AS_CONV["<b>🛠 AUTO-HEAL STALL / AI DIRECTOR</b><br><i>Autonomous triage & fix grant</i>"]
+    AS_CONV -->|"Synthesis Granted"| PFIX
+    AS_CONV -->|"Budget Exhausted"| B_CONV["<b>✖ BLOCKED_CONVERGENCE</b>"]
     
     PFIX -->|"Next Wave"| L1
     
@@ -254,10 +280,13 @@ flowchart TD
     style L2 fill:#064e3b,stroke:#34d399,stroke-width:2px,color:#ffffff
     style IMP fill:#064e3b,stroke:#34d399,stroke-width:2px,color:#ffffff
     style INSP fill:#134e4a,stroke:#2dd4bf,stroke-width:2px,color:#ffffff
+    style AP_SAFE fill:#1e1b4b,stroke:#a855f7,stroke-width:2px,color:#ffffff
     style INT fill:#0f3854,stroke:#38bdf8,stroke-width:2px,color:#ffffff
     style GATES fill:#312e81,stroke:#818cf8,stroke-width:2px,color:#ffffff
+    style AG_GATE fill:#1e1b4b,stroke:#a855f7,stroke-width:2px,color:#ffffff
     style REV fill:#78350f,stroke:#fbbf24,stroke-width:2px,color:#ffffff
     style JUDGE fill:#581c87,stroke:#c084fc,stroke-width:2px,color:#ffffff
+    style AS_CONV fill:#1e1b4b,stroke:#a855f7,stroke-width:2px,color:#ffffff
     style PFIX fill:#7f1d1d,stroke:#f87171,stroke-width:2px,color:#ffffff
     style POLISH fill:#134e4a,stroke:#2dd4bf,stroke-width:2px,color:#ffffff
     style DELIVER fill:#065f46,stroke:#34d399,stroke-width:2px,color:#ffffff
@@ -266,11 +295,10 @@ flowchart TD
     style B_SAFE fill:#450a0a,stroke:#ef4444,stroke-width:2px,color:#ffffff
     style B_GATE fill:#450a0a,stroke:#ef4444,stroke-width:2px,color:#ffffff
     style B_CONV fill:#450a0a,stroke:#ef4444,stroke-width:2px,color:#ffffff
-    style B_ARCH fill:#450a0a,stroke:#ef4444,stroke-width:2px,color:#ffffff
 ```
 
 ### The Iron Law of Convergence: $E_n < \min(E_0 \dots E_{n-1})$
-To prevent endless loops, fix waves are allowed **only if the number of blocking defects strictly decreases compared to the best historical round**. If an agent oscillates ($3 \to 1 \to 2$ defects), the engine immediately halts with `BLOCKED_CONVERGENCE` for human triage.
+To prevent endless loops, fix waves are allowed **only if the number of blocking defects strictly decreases compared to the best historical round** or if an autonomous recovery budget is actively granted. If an agent oscillates ($3 \to 1 \to 2$ defects) and exhausts its self-healing budget, the engine immediately halts with `BLOCKED_CONVERGENCE` for human triage.
 
 ---
 
