@@ -113,42 +113,56 @@ flowchart LR
 Gauntlet Engine runs a deterministic finite state machine where every transition is recorded in `state.json` and `report.md`:
 
 ```mermaid
-stateDiagram-v2
-    [*] --> INIT
-    INIT --> PLAN: Load Contract & Check Out Base
+flowchart TD
+    INIT["<b>INIT</b><br><i>Load Contract & Base Commit</i>"] --> PLAN["<b>PLAN</b><br><i>Slice Orthogonal Lanes</i>"]
     
-    PLAN --> IMPLEMENT: Orthogonal Lanes Defined
+    subgraph Parallel Worktree Execution
+        PLAN --> L1["<b>LANE 1</b><br><i>Worktree 1</i>"]
+        PLAN --> L2["<b>LANE 2</b><br><i>Worktree 2</i>"]
+    end
     
-    state IMPLEMENT {
-        [*] --> Worktree_Lane_1
-        [*] --> Worktree_Lane_2
-        Worktree_Lane_1 --> Merge_Lanes
-        Worktree_Lane_2 --> Merge_Lanes
-    }
+    L1 --> IMP["<b>IMPLEMENT</b><br><i>Workers complete diffs</i>"]
+    L2 --> IMP
     
-    IMPLEMENT --> INSPECT: Parallel Workers Complete
-    INSPECT --> INTEGRATE: Containment & Drift Checks Pass
-    INSPECT --> BLOCKED_SAFETY: Path Violation / Drift Detected
+    IMP --> INSP["<b>INSPECT</b><br><i>Verify owns & drift</i>"]
+    INSP -->|Pass| INT["<b>INTEGRATE</b><br><i>Merge into integration branch</i>"]
+    INSP -->|Containment Breach| B_SAFE["<b>✖ BLOCKED_SAFETY</b><br><i>Drift / Forbidden edit</i>"]
     
-    INTEGRATE --> GATES: Merge into Integration Branch
-    GATES --> REVIEW: Deterministic Gates Pass (Tests/Lints)
-    GATES --> BLOCKED_GATE: Mechanical Gate Failure
+    INT --> GATES["<b>GATES</b><br><i>Run deterministic test suite</i>"]
+    GATES -->|Pass| REV["<b>REVIEW</b><br><i>Adversarial code audit</i>"]
+    GATES -->|Fail| B_GATE["<b>✖ BLOCKED_GATE</b><br><i>Gate failure</i>"]
     
-    REVIEW --> JUDGE: Adversarial Audit Done
+    REV --> JUDGE["<b>JUDGE</b><br><i>Batch root-cause judgment</i>"]
     
-    state JUDGE_DECISION <<choice>>
-    JUDGE --> JUDGE_DECISION
+    JUDGE -->|No Blocking Claims| POLISH["<b>POLISH</b><br><i>Clean candidate pass</i>"]
+    JUDGE -->|Defects to Fix (Wave N+1)| PFIX["<b>PLAN_FIX</b><br><i>Coalesce & Re-slice lanes</i>"]
+    JUDGE -->|Stalled / Oscillating| B_CONV["<b>✖ BLOCKED_CONVERGENCE</b><br><i>Defect count did not drop</i>"]
+    JUDGE -->|REDESIGN Verdict| B_ARCH["<b>✖ BLOCKED_ARCHITECTURE</b><br><i>Architectural redesign</i>"]
     
-    JUDGE_DECISION --> POLISH: No Blocking Claims (Clean Candidate)
-    JUDGE_DECISION --> PLAN_FIX: Blocking Defects Present (Wave N+1)
-    JUDGE_DECISION --> BLOCKED_CONVERGENCE: Defect Count Stalled / Oscillating
-    JUDGE_DECISION --> BLOCKED_ARCHITECTURE: REDESIGN Verdict Issued
+    PFIX -->|Next Wave| L1
     
-    PLAN_FIX --> IMPLEMENT: Coalesce Overlaps & Re-slice Lanes
+    POLISH --> DELIVER["<b>DELIVER</b><br><i>Rebase & final verification</i>"]
+    DELIVER --> READY["<b>✔ READY</b><br><i>Clean delivery on target</i>"]
+
+    style INIT fill:#1e293b,stroke:#94a3b8,stroke-width:2px,color:#ffffff
+    style PLAN fill:#0f3854,stroke:#38bdf8,stroke-width:2px,color:#ffffff
+    style L1 fill:#064e3b,stroke:#34d399,stroke-width:2px,color:#ffffff
+    style L2 fill:#064e3b,stroke:#34d399,stroke-width:2px,color:#ffffff
+    style IMP fill:#064e3b,stroke:#34d399,stroke-width:2px,color:#ffffff
+    style INSP fill:#134e4a,stroke:#2dd4bf,stroke-width:2px,color:#ffffff
+    style INT fill:#0f3854,stroke:#38bdf8,stroke-width:2px,color:#ffffff
+    style GATES fill:#312e81,stroke:#818cf8,stroke-width:2px,color:#ffffff
+    style REV fill:#78350f,stroke:#fbbf24,stroke-width:2px,color:#ffffff
+    style JUDGE fill:#581c87,stroke:#c084fc,stroke-width:2px,color:#ffffff
+    style PFIX fill:#7f1d1d,stroke:#f87171,stroke-width:2px,color:#ffffff
+    style POLISH fill:#134e4a,stroke:#2dd4bf,stroke-width:2px,color:#ffffff
+    style DELIVER fill:#065f46,stroke:#34d399,stroke-width:2px,color:#ffffff
+    style READY fill:#047857,stroke:#10b981,stroke-width:3px,color:#ffffff
     
-    POLISH --> DELIVER: Final Verification
-    DELIVER --> READY: Rebase on Target Branch & Clean Worktrees
-    READY --> [*]
+    style B_SAFE fill:#450a0a,stroke:#ef4444,stroke-width:2px,color:#ffffff
+    style B_GATE fill:#450a0a,stroke:#ef4444,stroke-width:2px,color:#ffffff
+    style B_CONV fill:#450a0a,stroke:#ef4444,stroke-width:2px,color:#ffffff
+    style B_ARCH fill:#450a0a,stroke:#ef4444,stroke-width:2px,color:#ffffff
 ```
 
 ### The Iron Law of Convergence: $E_n < \min(E_0 \dots E_{n-1})$
