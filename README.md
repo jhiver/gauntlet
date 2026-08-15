@@ -28,9 +28,12 @@ Giving an AI agent free rein over a complex codebase usually leads to three cata
 2. **Review Blindspots & Sycophancy**: The same AI that wrote the code reviews its own PR with an inherent bias, missing edge cases and introducing architectural bloat.
 3. **Infinite Regression Loops**: Fixing bug A introduces bug B, leading to infinite retries, burned tokens, and degraded code quality.
 
-**Gauntlet Engine** solves this by treating autonomous engineering not as a loose chat prompt, but as a **deterministic, invariant-bound state machine**. 
+Inspired by the pioneering philosophy of the Gauntlet Loop ([robonuggets/gauntlet-loop](https://github.com/robonuggets/gauntlet-loop)), **Gauntlet Engine** **formalizes and industrializes** this paradigm into a production-grade, high-assurance engineering platform.
 
-No LLM sits in the control loop. Instead, specialized AI models fill strictly bounded, sandboxed roles governed by mechanical Git isolation and formal mathematical convergence.
+Instead of treating autonomous coding as a loose conversational loop, Gauntlet Engine enforces a **deterministic, invariant-bound state machine**:
+- **Zero LLM in the control loop**: State transitions, Git isolation, gate executions, and convergence decisions are 100% mechanical and deterministic.
+- **Role specialization**: LLMs fill bounded, sandboxed roles with distinct objective functions (builder vs adversarial auditor vs propositional judge).
+- **Mathematical guarantees**: Fix waves are strictly bounded by mathematical convergence ($E_n < \min(E_0 \dots E_{n-1})$), mathematically preventing oscillation and endless loops.
 
 ---
 
