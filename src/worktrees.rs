@@ -198,12 +198,25 @@ pub fn create_worktree(
     branch: &str,
     base: &str,
 ) -> Result<(), GitError> {
-    git.run(
-        &["worktree", "add", "-b", branch, &wt.to_string_lossy(), base],
-        Some(repo),
-        true,
-        true,
-    )?;
+    if wt.exists() {
+        return Ok(());
+    }
+    let b_exists = branch_exists(git, repo, branch);
+    if b_exists {
+        git.run(
+            &["worktree", "add", &wt.to_string_lossy(), branch],
+            Some(repo),
+            true,
+            true,
+        )?;
+    } else {
+        git.run(
+            &["worktree", "add", "-b", branch, &wt.to_string_lossy(), base],
+            Some(repo),
+            true,
+            true,
+        )?;
+    }
 
     // Symlink node_modules if present in main repo
     let src = repo.join("node_modules");

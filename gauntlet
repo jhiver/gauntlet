@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Gauntlet executable wrapper: python3 -m src.cli "$@"
+# Gauntlet native executable wrapper
 set -euo pipefail
 SOURCE="${BASH_SOURCE[0]}"
 while [ -h "$SOURCE" ]; do
@@ -9,9 +9,9 @@ while [ -h "$SOURCE" ]; do
 done
 TOOL_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 export GAUNTLET_INVOKED_CWD="$PWD"
-if [ -f "$TOOL_DIR/rust/target/release/gauntlet" ]; then
-  exec "$TOOL_DIR/rust/target/release/gauntlet" "$@"
+
+if [ -f "$TOOL_DIR/target/release/gauntlet" ]; then
+  exec "$TOOL_DIR/target/release/gauntlet" "$@"
 else
-  cd "$TOOL_DIR"
-  exec python3 -m src.cli "$@"
+  cargo run --release --manifest-path "$TOOL_DIR/Cargo.toml" --bin gauntlet -- "$@"
 fi

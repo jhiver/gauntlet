@@ -5,9 +5,9 @@
 ### *Autonomous Multi-Agent Software Engineering with Mechanical Containment & Mathematical Convergence*
 
 [![Rust](https://img.shields.io/badge/Rust-1.80+-orange.svg?logo=rust)](https://www.rust-lang.org)
-[![Tests](https://img.shields.io/badge/Tests-277%20passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-136%20passed-brightgreen.svg)]()
 [![Safety](https://img.shields.io/badge/Zero--Unwrap-100%25%20Crash--Resilient-blue.svg)]()
-[![Dual-Engine](https://img.shields.io/badge/Engine-Rust%20%7C%20Python-blueviolet.svg)]()
+[![Engine](https://img.shields.io/badge/Engine-Pure%20Rust%20(Zero--Panic)-blueviolet.svg)]()
 [![License](https://img.shields.io/badge/License-MIT%2FApache--2.0-blue.svg)]()
 
 [The Vision](#-the-vision) •
@@ -160,17 +160,17 @@ To prevent endless loops, fix waves are allowed **only if the number of blocking
 
 ### 1. Build and Install (Rust)
 
-Gauntlet is built in production-grade, zero-panic Rust with 100% typed error handling:
+Gauntlet is built in 100% production-grade, zero-panic Rust with typed error handling:
 
 ```bash
 # Build release binary
-cargo build --release --manifest-path rust/Cargo.toml
+cargo build --release
 
 # Install to your PATH
-cargo install --path rust
+cargo install --path .
 ```
 
-*(Alternatively, run the Python 3.11+ engine directly: `./gauntlet <mission.md>`)*
+*(Alternatively, run the native wrapper directly: `./gauntlet <mission.md>`)*
 
 ---
 
@@ -279,18 +279,17 @@ Gauntlet merges configuration in the following order:
 ## 🧪 Safety & Test Suite
 
 Gauntlet Engine is tested to the highest assurance standards:
+- **100% Pure Rust**: Zero legacy dependencies, single static binary.
 - **0 `unwrap()` / `expect()` / `panic!`** in all non-test Rust modules.
 - **Poison-Resilient Mutexes**: Thread locks automatically recover from poisoned states.
-- **277 Tests Passed (0 Failures)**:
-  - 136 Rust unit and integration tests.
-  - 141 Python unit tests.
-  - Clean Clippy check (`--all-targets -- -D warnings`).
+- **136 Tests Passed (0 Failures)** across state machines, worktree containment, and fallback executors.
+- **0 Clippy Warnings** (`cargo clippy --all-targets -- -D warnings`).
 
 ---
 
 ## 🙏 Acknowledgments & Credits
 
-**Gauntlet Engine** builds upon, formalizes, and extends the foundational concepts introduced by [robonuggets/gauntlet-loop](https://github.com/robonuggets/gauntlet-loop). We expand the original loop into a production-grade, dual-engine (Rust + Python) autonomous orchestrator with mechanical worktree isolation, adversarial multi-role auditing, and bounded mathematical convergence.
+**Gauntlet Engine** builds upon, formalizes, and extends the foundational concepts introduced by [robonuggets/gauntlet-loop](https://github.com/robonuggets/gauntlet-loop). We expand the original Python proof-of-concept into a production-grade, 100% Rust high-performance engine with mechanical worktree isolation, adversarial multi-role auditing, and bounded mathematical convergence.
 
 ---
 

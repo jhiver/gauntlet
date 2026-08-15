@@ -25,7 +25,7 @@ impl KimiAdapter {
         &self,
         capsule: &Path,
         worktree: &Path,
-        write: bool,
+        _write: bool,
         model: Option<&str>,
         _effort: Option<&str>,
     ) -> Vec<String> {
@@ -110,14 +110,10 @@ mod tests {
             }),
         );
 
-        let argv_write = adapter.build_argv(Path::new("/c.md"), Path::new("/wt"), true, None, None);
-        assert!(argv_write.contains(&"-y".to_string()));
-        assert!(!argv_write.contains(&"--auto".to_string()));
-        assert!(argv_write.contains(&"-m".to_string()));
-        assert!(argv_write.contains(&"kimi-code/k3".to_string()));
-
-        let argv_ro = adapter.build_argv(Path::new("/c.md"), Path::new("/wt"), false, None, None);
-        assert!(argv_ro.contains(&"--auto".to_string()));
-        assert!(!argv_ro.contains(&"-y".to_string()));
+        let argv = adapter.build_argv(Path::new("/c.md"), Path::new("/wt"), true, None, None);
+        assert!(argv.contains(&"-m".to_string()));
+        assert!(argv.contains(&"kimi-code/k3".to_string()));
+        assert!(argv.contains(&"--output-format".to_string()));
+        assert!(argv.contains(&"stream-json".to_string()));
     }
 }

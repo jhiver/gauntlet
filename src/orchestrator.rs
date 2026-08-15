@@ -1286,8 +1286,34 @@ impl Orchestrator {
 
             // Check if already completed
             let date = chrono::Local::now().format("%Y%m%d").to_string();
+            let run_date = if self.state.run_id.len() >= 8 && self.state.run_id[..8].chars().all(|c| c.is_ascii_digit()) {
+                self.state.run_id[..8].to_string()
+            } else {
+                date.clone()
+            };
             let missions_root = self.repo_path().join(".missions");
-            let expected_run_dir = missions_root.join(format!("{date}-{}", sub_mission.slug));
+            let mut expected_run_dir = missions_root.join(format!("{run_date}-{}", sub_mission.slug));
+            if let Ok(entries) = std::fs::read_dir(&missions_root) {
+                let mut best_dir = None;
+                for entry in entries.flatten() {
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    if name.ends_with(&format!("-{}", sub_mission.slug)) || name == sub_mission.slug {
+                        let candidate = entry.path();
+                        if let Ok(st) = load(&candidate) {
+                            if st.phase == "READY" {
+                                best_dir = Some(candidate);
+                                break;
+                            }
+                            if best_dir.is_none() {
+                                best_dir = Some(candidate);
+                            }
+                        }
+                    }
+                }
+                if let Some(dir) = best_dir {
+                    expected_run_dir = dir;
+                }
+            }
             let resume_dir = if expected_run_dir.join("state.json").exists() {
                 if let Ok(prior_state) = load(&expected_run_dir) {
                     if prior_state.phase == "READY" {
