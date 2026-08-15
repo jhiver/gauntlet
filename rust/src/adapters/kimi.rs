@@ -38,7 +38,6 @@ impl KimiAdapter {
             "--output-format".to_string(),
             "stream-json".to_string(),
         ];
-        argv.push(if write { "-y".to_string() } else { "--auto".to_string() });
         let chosen = model.or(self.subprocess.default_model.as_deref());
         if let Some(m) = chosen {
             argv.push("-m".to_string());

@@ -9,5 +9,9 @@ while [ -h "$SOURCE" ]; do
 done
 TOOL_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 export GAUNTLET_INVOKED_CWD="$PWD"
-cd "$TOOL_DIR"
-exec python3 -m src.cli "$@"
+if [ -f "$TOOL_DIR/rust/target/release/gauntlet" ]; then
+  exec "$TOOL_DIR/rust/target/release/gauntlet" "$@"
+else
+  cd "$TOOL_DIR"
+  exec python3 -m src.cli "$@"
+fi
