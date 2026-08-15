@@ -5,7 +5,7 @@
 ### *Autonomous Multi-Agent Software Engineering with Mechanical Containment & Mathematical Convergence*
 
 [![Rust](https://img.shields.io/badge/Rust-1.80+-orange.svg?logo=rust)](https://www.rust-lang.org)
-[![Tests](https://img.shields.io/badge/Tests-140%20passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-141%20passed-brightgreen.svg)]()
 [![Safety](https://img.shields.io/badge/Zero--Unwrap-100%25%20Crash--Resilient-blue.svg)]()
 [![Self-Healing](https://img.shields.io/badge/Auto--Healing-Bounded%20Recovery-blueviolet.svg)]()
 [![License](https://img.shields.io/badge/License-MIT%2FApache--2.0-blue.svg)]()
@@ -383,6 +383,27 @@ gauntlet --config gauntlet.agy.toml _missions/my-feature.md
 # 4. Interactive mode: Pauses for human confirmation at key milestones
 gauntlet --interactive _missions/my-feature.md
 ```
+
+---
+
+### 4. File-Based Kanban State Tracking in Git
+
+Gauntlet Engine uses **self-documenting file renames** to track lifecycle state directly in the filesystem and Git history without hidden state:
+
+```text
+_missions/
+├── 01-port-rust.done.md              # ✔ Completed & delivered in target branch
+├── 02-auto-heal.done.md              # ✔ Completed & delivered in target branch
+├── 03-distributed-cache.doing.md     # ⏳ Currently being executed by Gauntlet
+├── 04-jwt-auth.blocked.md            # ✖ Blocked (e.g. gate failure or drift)
+└── 05-payment-stripe.md              # ○ Draft specification (To Do)
+```
+
+| Lifecycle Transition | File Rename | Automatic Action |
+| :--- | :--- | :--- |
+| **Start Run (`INIT`)** | `my-feature.md` $\to$ `my-feature.doing.md` | Gauntlet marks contract active. |
+| **Success (`DELIVER`)** | `my-feature.doing.md` $\to$ `my-feature.done.md` | Renamed and **staged into delivery commit** with source code. |
+| **Blocked (`BLOCKED_*`)** | `my-feature.doing.md` $\to$ `my-feature.blocked.md` | Renamed for human / AI triage. Running `gauntlet <file>` automatically resumes. |
 
 ---
 

@@ -512,6 +512,28 @@ impl Orchestrator {
         lines.join("\n")
     }
 
+    pub fn _update_mission_file_status(&mut self, new_status: &str) {
+        if self.dry_run {
+            return;
+        }
+        let curr_path = self.mission.source_path.clone();
+        if !curr_path.is_file() {
+            return;
+        }
+
+        let new_path = crate::mission::mission_status_path(&curr_path, new_status);
+        if new_path != curr_path {
+            if let Ok(()) = std::fs::rename(&curr_path, &new_path) {
+                self.log(&format!(
+                    "  [MISSION_STATUS] Mission contract renamed: {} -> {}",
+                    curr_path.display(),
+                    new_path.display()
+                ));
+                self.mission.source_path = new_path;
+            }
+        }
+    }
+
     pub fn _blocked(&mut self, reason: &str, kind: &str) -> Result<(), GauntletError> {
         self.log(&format!("{kind}: {reason}"));
         if let Ok(mut ui) = default_ui().lock() {
@@ -525,6 +547,7 @@ impl Orchestrator {
         if let Some(ref report) = self.report {
             let _ = report.section(kind, &format!("{reason}\n\n{}", self._diagnosis()));
         }
+        self._update_mission_file_status("blocked");
         self._save()
     }
 
@@ -1134,6 +1157,7 @@ impl Orchestrator {
             );
         }
 
+        self._update_mission_file_status("doing");
         self._transition("PLAN")
     }
 
@@ -2603,11 +2627,13 @@ impl Orchestrator {
 
         if let Ok(mut ui) = default_ui().lock() {
             if final_phase == "READY" {
+                self._update_mission_file_status("done");
                 ui.success(
                     &format!("Mission '{}' delivered successfully into '{}'!", self.state.slug, target),
                     "",
                 );
             } else {
+                self._update_mission_file_status("done");
                 ui.success(
                     &format!("Mission '{}' verified: behavior already satisfies contract.", self.state.slug),
                     "",

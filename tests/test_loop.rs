@@ -43,6 +43,9 @@ fn test_full_loop_echo_reaches_ready() {
     let state = load(orch.run_dir.as_ref().unwrap()).unwrap();
     assert_eq!(state.phase, "READY");
 
+    // The mission file was renamed to .done.md
+    assert!(tmp.path().join("m.done.md").is_file(), "mission file should be renamed to m.done.md");
+
     // The echo lane file was delivered into target branch
     let delivered = repo.join("src").join("example").join("echo-L1-w0.md");
     assert!(delivered.is_file(), "delivered file should exist at {}", delivered.display());

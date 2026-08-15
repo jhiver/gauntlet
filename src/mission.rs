@@ -78,6 +78,33 @@ pub struct StageSpec {
     pub gates: Vec<String>,
 }
 
+pub fn clean_mission_slug(stem_or_slug: &str) -> String {
+    let mut s = stem_or_slug;
+    for suffix in &[".doing", ".done", ".blocked", ".todo", ".failed"] {
+        if let Some(stripped) = s.strip_suffix(suffix) {
+            s = stripped;
+        }
+    }
+    s.to_string()
+}
+
+pub fn mission_status_path(current_path: &Path, new_status: &str) -> PathBuf {
+    let file_name = match current_path.file_name().and_then(|f| f.to_str()) {
+        Some(name) => name,
+        None => return current_path.to_path_buf(),
+    };
+
+    let parent = current_path.parent().unwrap_or_else(|| Path::new("."));
+    let stem = file_name.strip_suffix(".md").unwrap_or(file_name);
+    let base_slug = clean_mission_slug(stem);
+
+    if new_status.is_empty() || new_status == "todo" {
+        parent.join(format!("{base_slug}.md"))
+    } else {
+        parent.join(format!("{base_slug}.{new_status}.md"))
+    }
+}
+
 pub fn parse_mission(text: &str, source_path: &Path) -> Result<Mission, MissionError> {
     static FRONTMATTER_RE: once_cell::sync::Lazy<Option<Regex>> =
         once_cell::sync::Lazy::new(|| Regex::new(r"\A\+\+\+[ \t]*\n([\s\S]*?)\n\+\+\+[ \t]*\n?").ok());
@@ -114,13 +141,13 @@ pub fn parse_mission(text: &str, source_path: &Path) -> Result<Mission, MissionE
 
     let slug_val = front.get("slug").and_then(|v| v.as_str()).unwrap_or("");
     let slug = if !slug_val.is_empty() {
-        slug_val.to_string()
+        clean_mission_slug(slug_val)
     } else {
-        source_path
+        let raw = source_path
             .file_stem()
             .and_then(|s| s.to_str())
-            .unwrap_or("")
-            .to_string()
+            .unwrap_or("");
+        clean_mission_slug(raw)
     };
 
     if slug.is_empty() {
@@ -324,11 +351,25 @@ pub fn parse_mission(text: &str, source_path: &Path) -> Result<Mission, MissionE
     })
 }
 
+pub fn resolve_mission_candidate(path: &Path) -> PathBuf {
+    if path.is_file() {
+        return path.to_path_buf();
+    }
+    for status in &["doing", "blocked", "done", "todo", ""] {
+        let cand = mission_status_path(path, status);
+        if cand.is_file() {
+            return cand;
+        }
+    }
+    path.to_path_buf()
+}
+
 pub fn load_mission(path: &Path) -> Result<Mission, MissionError> {
-    let text = std::fs::read_to_string(path).map_err(|e| {
-        MissionError::Message(format!("cannot read mission file {}: {e}", path.display()))
+    let resolved = resolve_mission_candidate(path);
+    let text = std::fs::read_to_string(&resolved).map_err(|e| {
+        MissionError::Message(format!("cannot read mission file {}: {e}", resolved.display()))
     })?;
-    parse_mission(&text, path)
+    parse_mission(&text, &resolved)
 }
 
 pub fn create_stage_mission(
@@ -581,5 +622,22 @@ path = "/tmp/repo"
         assert_eq!(sub.lanes.len(), 1);
         assert_eq!(sub.lanes[0].id, "L1");
         assert_eq!(sub.lanes[0].owns, vec!["db/**"]);
+    }
+
+    #[test]
+    fn test_clean_mission_slug_and_status_paths() {
+        assert_eq!(super::clean_mission_slug("auth-v2"), "auth-v2");
+        assert_eq!(super::clean_mission_slug("auth-v2.doing"), "auth-v2");
+        assert_eq!(super::clean_mission_slug("auth-v2.done"), "auth-v2");
+        assert_eq!(super::clean_mission_slug("auth-v2.blocked"), "auth-v2");
+
+        let base = Path::new("_missions/01-cache.md");
+        assert_eq!(super::mission_status_path(base, "doing"), PathBuf::from("_missions/01-cache.doing.md"));
+        assert_eq!(super::mission_status_path(base, "done"), PathBuf::from("_missions/01-cache.done.md"));
+        assert_eq!(super::mission_status_path(base, "blocked"), PathBuf::from("_missions/01-cache.blocked.md"));
+
+        let doing = Path::new("_missions/01-cache.doing.md");
+        assert_eq!(super::mission_status_path(doing, "done"), PathBuf::from("_missions/01-cache.done.md"));
+        assert_eq!(super::mission_status_path(doing, "blocked"), PathBuf::from("_missions/01-cache.blocked.md"));
     }
 }

@@ -114,7 +114,8 @@ where
         _ => env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
     };
 
-    let mission = resolve_path(mission_str.as_deref(), &invoked_cwd);
+    let mission = resolve_path(mission_str.as_deref(), &invoked_cwd)
+        .map(|p| crate::mission::resolve_mission_candidate(&p));
     let config = resolve_path(config_str.as_deref(), &invoked_cwd);
     let resume = resolve_path(resume_str.as_deref(), &invoked_cwd);
 
