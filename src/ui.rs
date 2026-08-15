@@ -3,8 +3,10 @@
 //! Provides modern, informative, styled terminal output with ANSI colors,
 //! live execution timers/spinners, progress bars, and structured tables.
 
+use std::collections::BTreeMap;
 use std::io::{self, IsTerminal, Write};
 use std::sync::{Mutex, OnceLock};
+use std::time::Instant;
 
 use crate::verdicts::ClaimGroup;
 
@@ -42,10 +44,64 @@ pub const BG_RED: &str = "\x1b[41m";
 
 pub const SPINNER_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
+#[derive(Debug, Clone)]
+pub struct TaskLiveState {
+    pub label: String,
+    pub harness: String,
+    pub model: String,
+    pub start_time: Instant,
+    pub raw_event: Option<String>,
+    pub event_lines: Vec<String>,
+}
+
+pub fn format_event_preview(raw: &str, max_lines: usize, max_cols: usize) -> Vec<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Vec::new();
+    }
+
+    let mut result_lines = Vec::new();
+
+    if let Ok(json_val) = serde_json::from_str::<serde_json::Value>(trimmed) {
+        if let Ok(pretty) = serde_json::to_string_pretty(&json_val) {
+            for line in pretty.lines() {
+                let char_count = line.chars().count();
+                if char_count > max_cols {
+                    let s: String = line.chars().take(max_cols.saturating_sub(3)).collect();
+                    result_lines.push(format!("{s}..."));
+                } else {
+                    result_lines.push(line.to_string());
+                }
+            }
+        }
+    } else {
+        for line in trimmed.lines() {
+            let char_count = line.chars().count();
+            if char_count > max_cols {
+                let s: String = line.chars().take(max_cols.saturating_sub(3)).collect();
+                result_lines.push(format!("{s}..."));
+            } else {
+                result_lines.push(line.to_string());
+            }
+        }
+    }
+
+    if result_lines.len() > max_lines {
+        let total = result_lines.len();
+        result_lines.truncate(max_lines.saturating_sub(1));
+        let remaining = total - result_lines.len();
+        result_lines.push(format!("... (+{remaining} more lines)"));
+    }
+
+    result_lines
+}
+
 pub struct UI {
     pub enable_color: bool,
     last_ticker_len: usize,
+    last_live_lines: usize,
     spinner_idx: usize,
+    active_tasks: BTreeMap<String, TaskLiveState>,
 }
 
 impl UI {
@@ -58,7 +114,9 @@ impl UI {
         Self {
             enable_color: ec,
             last_ticker_len: 0,
+            last_live_lines: 0,
             spinner_idx: 0,
+            active_tasks: BTreeMap::new(),
         }
     }
 
@@ -77,10 +135,101 @@ impl UI {
         }
     }
 
-    pub fn print_line(&mut self, text: &str) {
+    pub fn clear_live(&mut self) {
+        if self.last_live_lines > 0 && self.enable_color {
+            for _ in 0..self.last_live_lines {
+                print!("\x1b[2K\x1b[1A");
+            }
+            print!("\x1b[2K\r");
+            let _ = io::stdout().flush();
+            self.last_live_lines = 0;
+        }
         self.clear_ticker();
+    }
+
+    pub fn update_live_task(
+        &mut self,
+        task_key: &str,
+        label: &str,
+        harness: &str,
+        model: &str,
+        start_time: Instant,
+        raw_event: Option<&str>,
+    ) {
+        let event_lines = match raw_event {
+            Some(r) => format_event_preview(r, 10, 80),
+            None => Vec::new(),
+        };
+
+        self.active_tasks.insert(
+            task_key.to_string(),
+            TaskLiveState {
+                label: label.to_string(),
+                harness: harness.to_string(),
+                model: model.to_string(),
+                start_time,
+                raw_event: raw_event.map(|s| s.to_string()),
+                event_lines,
+            },
+        );
+
+        self.render_live();
+    }
+
+    pub fn clear_live_task(&mut self, task_key: &str) {
+        self.active_tasks.remove(task_key);
+        if self.active_tasks.is_empty() {
+            self.clear_live();
+        } else {
+            self.render_live();
+        }
+    }
+
+    pub fn render_live(&mut self) {
+        if !self.enable_color || self.active_tasks.is_empty() {
+            return;
+        }
+
+        if self.last_live_lines > 0 {
+            for _ in 0..self.last_live_lines {
+                print!("\x1b[2K\x1b[1A");
+            }
+            print!("\x1b[2K\r");
+        }
+
+        self.spinner_idx = (self.spinner_idx + 1) % SPINNER_FRAMES.len();
+        let frame = SPINNER_FRAMES[self.spinner_idx];
+        let mut lines = Vec::new();
+
+        for task in self.active_tasks.values() {
+            let elapsed = task.start_time.elapsed().as_secs();
+            let spinner = self.color(frame, &[BOLD, CYAN]);
+            let label = self.color(&format!("[{}]", task.label), &[BOLD, WHITE]);
+            let target = self.color(&format!("{} ({})", task.harness, task.model), &[BRIGHT_CYAN]);
+            let timer = self.color(&format!("[{}s]", elapsed), &[DIM, WHITE]);
+
+            lines.push(format!("  {spinner} {label} {target} {timer}"));
+            for eline in &task.event_lines {
+                let bar = self.color("│", &[DIM, CYAN]);
+                let dim_text = self.color(eline, &[DIM, WHITE]);
+                lines.push(format!("    {bar} {dim_text}"));
+            }
+        }
+
+        for l in &lines {
+            println!("{l}");
+        }
+        let _ = io::stdout().flush();
+        self.last_live_lines = lines.len();
+    }
+
+    pub fn print_line(&mut self, text: &str) {
+        self.clear_live();
         println!("{text}");
         let _ = io::stdout().flush();
+        if !self.active_tasks.is_empty() {
+            self.render_live();
+        }
     }
 
     // ----------------------------------------------------------- Cards & Boxes

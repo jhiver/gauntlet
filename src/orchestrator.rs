@@ -1163,6 +1163,20 @@ impl Orchestrator {
         let lanes_str = format!("{} lane(s)", self.state.lanes.len());
         meta.push(("Lanes Planned", &lanes_str));
 
+        let mut roles_summary = Vec::new();
+        for role_name in &["planner", "implementer", "reviewer", "judge"] {
+            if let Some(role_cfg) = self.config.roles.get(*role_name) {
+                if let Some(link) = role_cfg.chain.first() {
+                    let model_str = link.model.as_deref().unwrap_or("default");
+                    roles_summary.push(format!("{role_name}: {} ({})", link.harness, model_str));
+                }
+            }
+        }
+        let roles_str = roles_summary.join(" | ");
+        if !roles_str.is_empty() {
+            meta.push(("Roles Matrix", &roles_str));
+        }
+
         let profile_str;
         if let Some(ref pinfo) = self.profile_info {
             let reasons_sample = pinfo.reasons.iter().take(2).cloned().collect::<Vec<_>>().join("; ");

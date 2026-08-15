@@ -300,9 +300,9 @@ impl SubprocessAdapter {
         hard_timeout_s: u64,
         idle_timeout_s: Option<u64>,
         out_dir: &Path,
-        _role: &str,
-        _lane_id: Option<&str>,
-        _model: Option<&str>,
+        role: &str,
+        lane_id: Option<&str>,
+        model: Option<&str>,
     ) -> RunResult {
         if argv.is_empty() {
             let out_path = out_dir.join("empty.out");
@@ -360,12 +360,31 @@ impl SubprocessAdapter {
             }
         };
 
+        let task_key = lane_id
+            .map(|lid| format!("{role}-{lid}"))
+            .unwrap_or_else(|| role.to_string());
+        let label = lane_id.unwrap_or(role);
+        let model_name = model.or(self.default_model.as_deref()).unwrap_or("default");
+
         let start_time = Instant::now();
         let deadline = start_time + Duration::from_secs(hard_timeout_s);
         let mut last_activity = Instant::now();
         let mut last_mtime: Option<SystemTime> = None;
         let mut timeout: Option<FailureKind> = None;
         let mut exit_status = None;
+        let mut last_read_pos = 0u64;
+        let mut last_event_str: Option<String> = None;
+
+        if let Ok(mut ui) = crate::ui::default_ui().lock() {
+            ui.update_live_task(
+                &task_key,
+                label,
+                &self.name,
+                model_name,
+                start_time,
+                None,
+            );
+        }
 
         loop {
             match child.try_wait() {
@@ -380,6 +399,51 @@ impl SubprocessAdapter {
                     timeout = Some(FailureKind::Crash);
                     break;
                 }
+            }
+
+            // Stream new events from out_path
+            if let Ok(mut file) = File::open(&out_path) {
+                if let Ok(metadata) = file.metadata() {
+                    let file_len = metadata.len();
+                    if file_len > last_read_pos && file.seek(SeekFrom::Start(last_read_pos)).is_ok() {
+                        let reader = BufReader::new(file);
+                        for line in reader.lines().map_while(Result::ok) {
+                            let t = line.trim();
+                            if !t.is_empty() {
+                                last_event_str = Some(t.to_string());
+                            }
+                        }
+                        last_read_pos = file_len;
+                    }
+                }
+            }
+
+            // If no event from stdout, check stderr tail
+            if last_event_str.is_none() {
+                if let Ok(file) = File::open(&err_path) {
+                    if let Ok(metadata) = file.metadata() {
+                        if metadata.len() > 0 {
+                            let tail = Self::tail(&err_path, 200);
+                            let trimmed = tail.trim();
+                            if !trimmed.is_empty() {
+                                if let Some(last_line) = trimmed.lines().last() {
+                                    last_event_str = Some(last_line.to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if let Ok(mut ui) = crate::ui::default_ui().lock() {
+                ui.update_live_task(
+                    &task_key,
+                    label,
+                    &self.name,
+                    model_name,
+                    start_time,
+                    last_event_str.as_deref(),
+                );
             }
 
             let now = Instant::now();
@@ -404,6 +468,10 @@ impl SubprocessAdapter {
             }
 
             std::thread::sleep(Duration::from_millis(200));
+        }
+
+        if let Ok(mut ui) = crate::ui::default_ui().lock() {
+            ui.clear_live_task(&task_key);
         }
 
         if self.jsonl_output {

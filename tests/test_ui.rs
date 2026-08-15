@@ -38,3 +38,36 @@ fn test_verdicts_table() {
     }];
     ui.verdicts_table(&groups, 76);
 }
+
+#[test]
+fn test_format_event_preview_truncation() {
+    use gauntlet::ui::format_event_preview;
+
+    // Small JSON
+    let raw_json = r#"{"type":"tool_call","name":"edit","input":{"path":"src/main.rs"}}"#;
+    let preview = format_event_preview(raw_json, 10, 80);
+    assert!(!preview.is_empty());
+    assert!(preview.iter().any(|l| l.contains("tool_call")));
+
+    // Long line truncation (> 40 cols)
+    let long_line_json = r#"{"msg":"This is a very very very long text line that will exceed the maximum allowed width of forty columns definitely"}"#;
+    let preview_trunc = format_event_preview(long_line_json, 10, 40);
+    assert!(preview_trunc.iter().any(|l| l.ends_with("...")));
+
+    // Multi-line truncation (> 5 lines)
+    let multi_line_raw = (0..20).map(|i| format!("Line #{i}")).collect::<Vec<_>>().join("\n");
+    let preview_lines = format_event_preview(&multi_line_raw, 5, 80);
+    assert_eq!(preview_lines.len(), 5);
+    assert!(preview_lines.last().unwrap().contains("+16 more lines"));
+}
+
+#[test]
+fn test_live_task_updates_and_cleanup() {
+    let mut ui = UI::new(Some(false));
+    let start = std::time::Instant::now();
+    ui.update_live_task("L1", "L1", "cmd", "claude-sonnet-5", start, Some(r#"{"action":"reading"}"#));
+    ui.update_live_task("L2", "L2", "cmd", "claude-sonnet-5", start, None);
+    ui.clear_live_task("L1");
+    ui.clear_live_task("L2");
+    ui.clear_live();
+}
