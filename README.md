@@ -125,21 +125,21 @@ flowchart TD
     L2 --> IMP
     
     IMP --> INSP["<b>INSPECT</b><br><i>Verify owns & drift</i>"]
-    INSP -->|Pass| INT["<b>INTEGRATE</b><br><i>Merge into integration branch</i>"]
-    INSP -->|Containment Breach| B_SAFE["<b>✖ BLOCKED_SAFETY</b><br><i>Drift / Forbidden edit</i>"]
+    INSP -->|"Pass"| INT["<b>INTEGRATE</b><br><i>Merge into integration branch</i>"]
+    INSP -->|"Containment Breach"| B_SAFE["<b>✖ BLOCKED_SAFETY</b><br><i>Drift / Forbidden edit</i>"]
     
     INT --> GATES["<b>GATES</b><br><i>Run deterministic test suite</i>"]
-    GATES -->|Pass| REV["<b>REVIEW</b><br><i>Adversarial code audit</i>"]
-    GATES -->|Fail| B_GATE["<b>✖ BLOCKED_GATE</b><br><i>Gate failure</i>"]
+    GATES -->|"Pass"| REV["<b>REVIEW</b><br><i>Adversarial code audit</i>"]
+    GATES -->|"Fail"| B_GATE["<b>✖ BLOCKED_GATE</b><br><i>Gate failure</i>"]
     
     REV --> JUDGE["<b>JUDGE</b><br><i>Batch root-cause judgment</i>"]
     
-    JUDGE -->|No Blocking Claims| POLISH["<b>POLISH</b><br><i>Clean candidate pass</i>"]
-    JUDGE -->|Defects to Fix (Wave N+1)| PFIX["<b>PLAN_FIX</b><br><i>Coalesce & Re-slice lanes</i>"]
-    JUDGE -->|Stalled / Oscillating| B_CONV["<b>✖ BLOCKED_CONVERGENCE</b><br><i>Defect count did not drop</i>"]
-    JUDGE -->|REDESIGN Verdict| B_ARCH["<b>✖ BLOCKED_ARCHITECTURE</b><br><i>Architectural redesign</i>"]
+    JUDGE -->|"No Blocking Claims"| POLISH["<b>POLISH</b><br><i>Clean candidate pass</i>"]
+    JUDGE -->|"Defects to Fix (Wave N+1)"| PFIX["<b>PLAN_FIX</b><br><i>Coalesce & Re-slice lanes</i>"]
+    JUDGE -->|"Stalled / Oscillating"| B_CONV["<b>✖ BLOCKED_CONVERGENCE</b><br><i>Defect count did not drop</i>"]
+    JUDGE -->|"REDESIGN Verdict"| B_ARCH["<b>✖ BLOCKED_ARCHITECTURE</b><br><i>Architectural redesign</i>"]
     
-    PFIX -->|Next Wave| L1
+    PFIX -->|"Next Wave"| L1
     
     POLISH --> DELIVER["<b>DELIVER</b><br><i>Rebase & final verification</i>"]
     DELIVER --> READY["<b>✔ READY</b><br><i>Clean delivery on target</i>"]
