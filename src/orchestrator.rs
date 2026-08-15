@@ -2413,6 +2413,15 @@ impl Orchestrator {
                 }
             }
 
+            let src = repo.join("node_modules");
+            let dst = self.integration_wt().join("node_modules");
+            if src.exists() && !dst.exists() {
+                #[cfg(unix)]
+                {
+                    let _ = std::os::unix::fs::symlink(&src, &dst);
+                }
+            }
+
             let out_dir = self
                 .run_dir
                 .as_ref()
