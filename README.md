@@ -13,7 +13,7 @@
 [The Vision](#-the-vision) •
 [The 5 Core Roles](#-the-5-core-roles) •
 [Supported Harnesses](#-supported-harness-adapters) •
-[Mix & Match Recipes](#-mix--match-configurations) •
+[Configurable Synergy](#-configurable-multi-model--multi-harness-synergy) •
 [State Machine Workflow](#-state-machine-lifecycle) •
 [Quickstart](#-quickstart) •
 [Skills](#-skills-integration)
@@ -105,9 +105,9 @@ Gauntlet Engine connects directly to all major agentic CLIs and models through a
 
 ---
 
-## 🎛️ Mix & Match Configurations
+## 🤝 Configurable Multi-Model & Multi-Harness Synergy
 
-Using a single model for both implementation and audit creates an echo chamber. Gauntlet allows complete freedom to **mix and match any model and harness for any role**, with **zero-delay immediate failover** (no exponential backoff sleeps—immediate cascade to the next link for maximum throughput):
+Using a single model for both implementation and audit creates an echo chamber. Gauntlet Engine enables complete freedom to **mix and match any model and harness for any role**, with **zero-delay immediate failover** (no exponential backoff sleeps—immediate cascade to the next link for maximum throughput):
 
 ```mermaid
 flowchart LR
@@ -129,6 +129,21 @@ flowchart LR
     style H3 fill:#064e3b,stroke:#34d399,stroke-width:2px,color:#ffffff
     style H4 fill:#7c2d12,stroke:#fb923c,stroke-width:2px,color:#ffffff
 ```
+
+### Sample Role & Failover Topology
+
+| Role | Primary Harness & Model | Secondary Failover | Tertiary Failover | Rationale & Capability Profile |
+| :--- | :--- | :--- | :--- | :--- |
+| **`planner`** | `agy` : `gemini-3.7-flash` | `cmd` : `claude-sonnet-5` | `codex` : `gpt-5.6-sol` | High context window & rapid contract slicing into disjoint file globs |
+| **`implementer`** | `agy` : `gemini-3.7-flash` | `cmd` : `claude-sonnet-5` | `cmd` : `gpt-5.6-luna` | Maximum throughput in parallel worktrees with zero latency |
+| **`reviewer`** | `cmd` : `claude-sonnet-5` | `codex` : `gpt-5.6-sol` (`high`) | `kimi` : `kimi-k3` | Zero-sycophancy adversarial code audit against Acceptance Criteria & Invariants |
+| **`judge`** | `codex` : `gpt-5.6-sol` (`xhigh`) | `cmd` : `claude-sonnet-5` | `cmd` : `deepseek-v4-pro` | Strict propositional logic, root-cause deduplication & defect filtering |
+| **`fixer`** | `cmd` : `claude-sonnet-5` | `agy` : `gemini-3.7-flash` | `codex` : `gpt-5.6-sol` | High-precision surgical repairs on validated root causes in isolated lanes |
+| **`director`** | `human` : Interactive Console | — | — | Human checkpoint for redesign approvals & final delivery authorization |
+
+---
+
+### Mix & Match Configuration Recipes
 
 ### Recipe 1: The Frontier Cross-Provider Ensemble ([`gauntlet.toml`](file:///Users/jhiver/aios/projects/gauntlet/gauntlet.toml))
 Combining Gemini for high-speed implementation, Claude Sonnet 5 for adversarial review, and GPT-5.6 Sol for formal judgment:
