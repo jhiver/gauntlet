@@ -285,6 +285,12 @@ Gauntlet Engine is tested to the highest assurance standards:
 
 ---
 
+## 🙏 Acknowledgments & Credits
+
+**Gauntlet Engine** builds upon, formalizes, and extends the foundational concepts introduced by [robonuggets/gauntlet-loop](https://github.com/robonuggets/gauntlet-loop). We expand the original loop into a production-grade, dual-engine (Rust + Python) autonomous orchestrator with mechanical worktree isolation, adversarial multi-role auditing, and bounded mathematical convergence.
+
+---
+
 ## 📄 License
 
 Dual-licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or [MIT License](LICENSE-MIT) at your option.
