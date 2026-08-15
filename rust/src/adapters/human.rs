@@ -59,7 +59,8 @@ impl HumanAdapter {
         _idle_timeout_s: Option<u64>,
         out_dir: &Path,
     ) -> RunResult {
-        let block_start_re = Regex::new(r"^```gauntlet-\w+\s*$").unwrap();
+        static BLOCK_START_RE: once_cell::sync::Lazy<Option<Regex>> =
+            once_cell::sync::Lazy::new(|| Regex::new(r"^```gauntlet-\w+\s*$").ok());
         let mut collected = Vec::new();
         let mut mode: Option<&'static str> = None;
 
@@ -75,7 +76,7 @@ impl HumanAdapter {
                 if stripped == "```" {
                     break;
                 }
-            } else if block_start_re.is_match(stripped) {
+            } else if BLOCK_START_RE.as_ref().map(|re| re.is_match(stripped)).unwrap_or(false) {
                 mode = Some("block");
             } else if stripped == "approve" || stripped == "reject" {
                 mode = Some("decision");

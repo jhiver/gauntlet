@@ -288,7 +288,10 @@ impl Orchestrator {
             }
 
             let config = Config::from_table(cfg_table)?;
-            let repo = &mission.repos[0];
+            let repo = mission
+                .repos
+                .first()
+                .ok_or_else(|| GauntletError::blocked("mission has no repos defined".to_string()))?;
             let state = State {
                 slug: mission.slug.clone(),
                 repo: PathBuf::from(&repo.path)
@@ -415,7 +418,7 @@ impl Orchestrator {
     }
 
     pub fn _save(&mut self) -> Result<(), GauntletError> {
-        let _guard = self.state_lock.lock().unwrap();
+        let _guard = self.state_lock.lock().unwrap_or_else(|p| p.into_inner());
         self.state.harness_health = self.health.snapshot();
         if self.state.run_dir.is_some() {
             save(&self.state).map_err(|e| GauntletError::blocked(e.to_string()))?;
@@ -1155,7 +1158,7 @@ impl Orchestrator {
             PlannerResult::Stages(stages) if self.depth < self.max_depth => {
                 self.state.stages = stages
                     .iter()
-                    .map(|s| serde_json::to_value(s).unwrap())
+                    .filter_map(|s| serde_json::to_value(s).ok())
                     .collect();
                 let summary = stages
                     .iter()
@@ -1266,7 +1269,10 @@ impl Orchestrator {
                 ui.stage_header(i + 1, total, &stage.slug, &stage.brief, 76);
             }
 
-            let run_dir = self.run_dir.as_ref().unwrap();
+            let run_dir = match &self.run_dir {
+                Some(d) => d,
+                None => return Err(GauntletError::blocked("run_dir is not set".to_string())),
+            };
             let sub_mission_path = run_dir
                 .join("sub-missions")
                 .join(format!("{:02}-{}.input.md", i + 1, stage.slug));
@@ -1413,7 +1419,7 @@ impl Orchestrator {
             let mission = self.mission.clone();
             let wave = self.state.wave;
             let run_id = self.state.run_id.clone();
-            let run_dir = self.run_dir.clone().unwrap();
+            let run_dir = self.run_dir.clone().unwrap_or_default();
             let wt = self.lane_wt(&lane.id);
             let dry_run = self.dry_run;
             let config = self.config.clone();
@@ -1738,7 +1744,11 @@ impl Orchestrator {
     }
 
     pub fn _phase_gates(&mut self) -> Result<(), GauntletError> {
-        let out_dir = self.run_dir.as_ref().unwrap().join("outputs");
+        let out_dir = self
+            .run_dir
+            .as_ref()
+            .map(|d| d.join("outputs"))
+            .unwrap_or_else(|| PathBuf::from("outputs"));
         let results = run_gates(
             &self.state.gates,
             &self.integration_wt(),
@@ -1784,7 +1794,10 @@ impl Orchestrator {
     }
 
     pub fn _phase_review(&mut self) -> Result<(), GauntletError> {
-        let run_dir = self.run_dir.clone().unwrap();
+        let run_dir = match &self.run_dir {
+            Some(d) => d.clone(),
+            None => return Err(GauntletError::blocked("run_dir is not set".to_string())),
+        };
         let diff_path = run_dir
             .join("reviews")
             .join(format!("diff-w{}.patch", self.state.wave));
@@ -1825,7 +1838,7 @@ impl Orchestrator {
         let verdict_path = run_dir
             .join("verdicts")
             .join(format!("review-w{}.json", self.state.wave));
-        let data_str = serde_json::to_string_pretty(&data).unwrap();
+        let data_str = serde_json::to_string_pretty(&data).unwrap_or_else(|_| "{}".to_string());
         let _ = std::fs::write(&verdict_path, format!("{data_str}\n"));
 
         self.state.reviews = Self::slot(
@@ -1855,8 +1868,14 @@ impl Orchestrator {
     }
 
     pub fn _phase_judge(&mut self) -> Result<(), GauntletError> {
-        let run_dir = self.run_dir.clone().unwrap();
-        let review_json_path = self.state.reviews[self.state.reviews.len() - 1].clone();
+        let run_dir = match &self.run_dir {
+            Some(d) => d.clone(),
+            None => return Err(GauntletError::blocked("run_dir is not set".to_string())),
+        };
+        let review_json_path = match self.state.reviews.last() {
+            Some(p) => p.clone(),
+            None => return Err(GauntletError::blocked("no reviews recorded".to_string())),
+        };
         let review_json = std::fs::read_to_string(&review_json_path)
             .map_err(|e| GauntletError::blocked(format!("cannot read review JSON: {e}")))?;
 
@@ -1882,7 +1901,7 @@ impl Orchestrator {
         let judgment_path = run_dir
             .join("verdicts")
             .join(format!("judgment-w{}.json", self.state.wave));
-        let data_str = serde_json::to_string_pretty(&data).unwrap();
+        let data_str = serde_json::to_string_pretty(&data).unwrap_or_else(|_| "{}".to_string());
         let _ = std::fs::write(&judgment_path, format!("{data_str}\n"));
 
         self.state.judgments = Self::slot(
@@ -2018,7 +2037,7 @@ impl Orchestrator {
                 }
             }
             let tests = if owns.len() > 1 && owns.last().map(|s| s.ends_with(".test.js")).unwrap_or(false) {
-                vec![format!("node --test {}", owns.last().unwrap())]
+                owns.last().map(|last| vec![format!("node --test {last}")]).unwrap_or_default()
             } else {
                 Vec::new()
             };
@@ -2208,7 +2227,11 @@ impl Orchestrator {
             self.log("polish: some findings declare no owns; containment not enforced");
         }
 
-        let out_dir = self.run_dir.as_ref().unwrap().join("outputs");
+        let out_dir = self
+            .run_dir
+            .as_ref()
+            .map(|d| d.join("outputs"))
+            .unwrap_or_else(|| PathBuf::from("outputs"));
         let results = run_gates(
             &self.state.gates,
             wt,
@@ -2278,7 +2301,11 @@ impl Orchestrator {
         } else {
             rebase_onto(&self.git, &self.integration_wt(), &target)?;
 
-            let out_dir = self.run_dir.as_ref().unwrap().join("outputs");
+            let out_dir = self
+                .run_dir
+                .as_ref()
+                .map(|d| d.join("outputs"))
+                .unwrap_or_else(|| PathBuf::from("outputs"));
             let results = run_gates(
                 &self.state.gates,
                 &self.integration_wt(),

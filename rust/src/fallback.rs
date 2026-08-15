@@ -209,22 +209,22 @@ impl HarnessHealth {
     }
 
     pub fn is_open(&self, name: &str) -> bool {
-        let guard = self.states.lock().unwrap();
+        let guard = self.states.lock().unwrap_or_else(|p| p.into_inner());
         guard.get(name).map(|s| s == "open").unwrap_or(false)
     }
 
     pub fn open(&self, name: &str) {
-        let mut guard = self.states.lock().unwrap();
+        let mut guard = self.states.lock().unwrap_or_else(|p| p.into_inner());
         guard.insert(name.to_string(), "open".to_string());
     }
 
     pub fn close(&self, name: &str) {
-        let mut guard = self.states.lock().unwrap();
+        let mut guard = self.states.lock().unwrap_or_else(|p| p.into_inner());
         guard.insert(name.to_string(), "ok".to_string());
     }
 
     pub fn snapshot(&self) -> HashMap<String, String> {
-        let guard = self.states.lock().unwrap();
+        let guard = self.states.lock().unwrap_or_else(|p| p.into_inner());
         guard.clone()
     }
 }

@@ -463,9 +463,10 @@ pub fn glob_to_regex_string(pattern: &str) -> String {
             out.push_str("[^/]");
             i += 1;
         } else if c == '[' {
-            if let Some(j) = pattern[i + 1..].find(']') {
+            if let Some(j) = chars[i + 1..].iter().position(|&ch| ch == ']') {
                 let j_idx = i + 1 + j;
-                let content = &pattern[i + 1..j_idx];
+                let content_chars = &chars[i + 1..j_idx];
+                let content: String = content_chars.iter().collect();
                 if let Some(negated) = content.strip_prefix('!') {
                     out.push_str(&format!("[^{negated}]"));
                 } else {
@@ -535,9 +536,10 @@ pub fn sample(pattern: &str) -> String {
             out.push('x');
             i += 1;
         } else if c == '[' {
-            if let Some(j) = pattern[i + 1..].find(']') {
+            if let Some(j) = chars[i + 1..].iter().position(|&ch| ch == ']') {
                 let j_idx = i + 1 + j;
-                let content = &pattern[i + 1..j_idx];
+                let content_chars = &chars[i + 1..j_idx];
+                let content: String = content_chars.iter().collect();
                 if let Some(stripped) = content.strip_prefix('!') {
                     out.push(stripped.chars().next().unwrap_or('x'));
                 } else {

@@ -108,9 +108,14 @@ pub enum PlannerResult {
     Stages(Vec<StageSpec>),
 }
 
+static BLOCK_RE: once_cell::sync::Lazy<Option<Regex>> =
+    once_cell::sync::Lazy::new(|| Regex::new(r"```gauntlet-(report|verdict|plan|stages)[ \t]*\n([\s\S]*?)```").ok());
+
 /// Return the parsed JSON of the LAST ```gauntlet-<kind> block.
 pub fn extract_block(text: &str, kind: &str) -> Result<serde_json::Value, VerdictError> {
-    let block_re = Regex::new(r"```gauntlet-(report|verdict|plan|stages)[ \t]*\n([\s\S]*?)```").unwrap();
+    let block_re = BLOCK_RE.as_ref().ok_or_else(|| {
+        VerdictError::Message("failed to compile block extraction regex".to_string())
+    })?;
 
     let mut found = None;
     for cap in block_re.captures_iter(text) {
@@ -443,7 +448,9 @@ pub fn extract_planner_result(
     text: &str,
     valid_contract_ids: Option<&HashSet<String>>,
 ) -> Result<PlannerResult, VerdictError> {
-    let block_re = Regex::new(r"```gauntlet-(report|verdict|plan|stages)[ \t]*\n([\s\S]*?)```").unwrap();
+    let block_re = BLOCK_RE.as_ref().ok_or_else(|| {
+        VerdictError::Message("failed to compile block extraction regex".to_string())
+    })?;
 
     let mut found_kind = None;
     let mut found_text = None;

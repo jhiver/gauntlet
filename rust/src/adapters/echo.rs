@@ -96,24 +96,33 @@ impl HarnessAdapter for EchoAdapter {
             }
         };
 
-        let lane_id_re = Regex::new(r"(?m)^lane-id:\s*(\S+)\s*$").unwrap();
-        let lane_owns_re = Regex::new(r"(?m)^lane-owns:\s*(\[.*\])\s*$").unwrap();
-        let lane_tests_re = Regex::new(r"(?m)^lane-tests:\s*(\[.*\])\s*$").unwrap();
-        let wave_re = Regex::new(r"(?m)^wave:\s*(\d+)\s*$").unwrap();
+        static LANE_ID_RE: once_cell::sync::Lazy<Option<Regex>> =
+            once_cell::sync::Lazy::new(|| Regex::new(r"(?m)^lane-id:\s*(\S+)\s*$").ok());
+        static LANE_OWNS_RE: once_cell::sync::Lazy<Option<Regex>> =
+            once_cell::sync::Lazy::new(|| Regex::new(r"(?m)^lane-owns:\s*(\[.*\])\s*$").ok());
+        static LANE_TESTS_RE: once_cell::sync::Lazy<Option<Regex>> =
+            once_cell::sync::Lazy::new(|| Regex::new(r"(?m)^lane-tests:\s*(\[.*\])\s*$").ok());
+        static WAVE_RE: once_cell::sync::Lazy<Option<Regex>> =
+            once_cell::sync::Lazy::new(|| Regex::new(r"(?m)^wave:\s*(\d+)\s*$").ok());
 
         let mut changed = Vec::new();
         if write && worktree.is_dir() {
-            let owns = extract_json_list(&lane_owns_re, &text);
+            let owns = LANE_OWNS_RE
+                .as_ref()
+                .map(|re| extract_json_list(re, &text))
+                .unwrap_or_default();
             if !owns.is_empty() {
-                let lane_id = lane_id_re
-                    .captures(&text)
+                let lane_id = LANE_ID_RE
+                    .as_ref()
+                    .and_then(|re| re.captures(&text))
                     .and_then(|c| c.get(1).map(|m| m.as_str()))
                     .unwrap_or("lane");
-                let wave = wave_re
-                    .captures(&text)
+                let wave = WAVE_RE
+                    .as_ref()
+                    .and_then(|re| re.captures(&text))
                     .and_then(|c| c.get(1).map(|m| m.as_str()))
                     .unwrap_or("0");
-                let rel_dir = static_prefix(&owns[0]);
+                let rel_dir = owns.first().map(|o| static_prefix(o)).unwrap_or_default();
                 let filename = format!("echo-{}-w{}.md", lane_id, wave);
                 let rel = if rel_dir.is_empty() {
                     filename
@@ -135,7 +144,10 @@ impl HarnessAdapter for EchoAdapter {
             }
         }
 
-        let tests = extract_json_list(&lane_tests_re, &text);
+        let tests = LANE_TESTS_RE
+            .as_ref()
+            .map(|re| extract_json_list(re, &text))
+            .unwrap_or_default();
         let report = serde_json::json!({
             "files_changed": changed,
             "tests_run": tests,

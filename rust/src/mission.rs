@@ -79,8 +79,17 @@ pub struct StageSpec {
 }
 
 pub fn parse_mission(text: &str, source_path: &Path) -> Result<Mission, MissionError> {
-    let frontmatter_re = Regex::new(r"\A\+\+\+[ \t]*\n([\s\S]*?)\n\+\+\+[ \t]*\n?").unwrap();
-    let contract_id_re = Regex::new(r"(?m)^- ((?:AC|INV|NG)-\w+):").unwrap();
+    static FRONTMATTER_RE: once_cell::sync::Lazy<Option<Regex>> =
+        once_cell::sync::Lazy::new(|| Regex::new(r"\A\+\+\+[ \t]*\n([\s\S]*?)\n\+\+\+[ \t]*\n?").ok());
+    static CONTRACT_ID_RE: once_cell::sync::Lazy<Option<Regex>> =
+        once_cell::sync::Lazy::new(|| Regex::new(r"(?m)^- ((?:AC|INV|NG)-\w+):").ok());
+
+    let frontmatter_re = FRONTMATTER_RE.as_ref().ok_or_else(|| {
+        MissionError::Message("failed to compile frontmatter regex".to_string())
+    })?;
+    let contract_id_re = CONTRACT_ID_RE.as_ref().ok_or_else(|| {
+        MissionError::Message("failed to compile contract ID regex".to_string())
+    })?;
 
     let caps = match frontmatter_re.captures(text) {
         Some(c) => c,
@@ -92,9 +101,9 @@ pub fn parse_mission(text: &str, source_path: &Path) -> Result<Mission, MissionE
         }
     };
 
-    let frontmatter_str = caps.get(1).unwrap().as_str();
-    let match_end = caps.get(0).unwrap().end();
-    let body = text[match_end..].to_string();
+    let frontmatter_str = caps.get(1).map(|m| m.as_str()).unwrap_or("");
+    let match_end = caps.get(0).map(|m| m.end()).unwrap_or(0);
+    let body = text.get(match_end..).unwrap_or("").to_string();
 
     let front: toml::Table = toml::from_str(frontmatter_str).map_err(|e| {
         MissionError::Message(format!(
@@ -328,23 +337,32 @@ pub fn create_stage_mission(
     target_branch: &str,
     path: &Path,
 ) -> Result<Mission, MissionError> {
+    let repo_path = parent_mission
+        .repos
+        .first()
+        .map(|r| r.path.as_str())
+        .unwrap_or(".");
+
     let mut lines = vec![
         "+++".to_string(),
         format!("slug = \"{}-{}\"", parent_mission.slug, stage.slug),
         "".to_string(),
         "[[repos]]".to_string(),
-        format!("path = \"{}\"", parent_mission.repos[0].path),
+        format!("path = \"{repo_path}\""),
         format!("target_branch = \"{target_branch}\""),
     ];
 
+    let empty_gates = Vec::new();
     let gates = if !stage.gates.is_empty() {
         &stage.gates
+    } else if let Some(r) = parent_mission.repos.first() {
+        &r.gates
     } else {
-        &parent_mission.repos[0].gates
+        &empty_gates
     };
 
     if !gates.is_empty() {
-        let gates_json = serde_json::to_string(gates).unwrap();
+        let gates_json = serde_json::to_string(gates).unwrap_or_else(|_| "[]".to_string());
         lines.push(format!("gates = {gates_json}"));
     }
 
@@ -352,8 +370,8 @@ pub fn create_stage_mission(
         lines.push("".to_string());
         lines.push("[[lanes]]".to_string());
         lines.push("id = \"L1\"".to_string());
-        let owns_json = serde_json::to_string(&stage.owns).unwrap();
-        let brief_json = serde_json::to_string(&stage.brief).unwrap();
+        let owns_json = serde_json::to_string(&stage.owns).unwrap_or_else(|_| "[]".to_string());
+        let brief_json = serde_json::to_string(&stage.brief).unwrap_or_else(|_| "\"\"".to_string());
         lines.push(format!("owns = {owns_json}"));
         lines.push(format!("brief = {brief_json}"));
     }

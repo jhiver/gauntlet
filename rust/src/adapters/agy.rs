@@ -149,11 +149,14 @@ impl HarnessAdapter for AgyAdapter {
         let staged = worktree.join(".gauntlet").join("capsule.md");
         let argv = self.build_argv(&staged, worktree, write, model, effort);
         let sub_desc = self.subprocess.describe(&argv, worktree);
+        let parent_str = staged
+            .parent()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| ".gauntlet".to_string());
         format!(
-            "stage capsule at {}; {}; remove {}",
+            "stage capsule at {}; {}; remove {parent_str}",
             staged.display(),
-            sub_desc,
-            staged.parent().unwrap().display()
+            sub_desc
         )
     }
 }

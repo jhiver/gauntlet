@@ -53,21 +53,20 @@ where
 
     let mut i = 1;
     while i < args.len() {
-        let arg = &args[i];
+        let arg = match args.get(i) {
+            Some(a) => a,
+            None => break,
+        };
         if arg == "--config" {
             i += 1;
-            if i >= args.len() {
-                return Err("error: --config requires a file argument".to_string());
-            }
-            config_str = Some(args[i].clone());
+            let val = args.get(i).ok_or_else(|| "error: --config requires a file argument".to_string())?;
+            config_str = Some(val.clone());
         } else if let Some(val) = arg.strip_prefix("--config=") {
             config_str = Some(val.to_string());
         } else if arg == "--resume" {
             i += 1;
-            if i >= args.len() {
-                return Err("error: --resume requires a directory argument".to_string());
-            }
-            resume_str = Some(args[i].clone());
+            let val = args.get(i).ok_or_else(|| "error: --resume requires a directory argument".to_string())?;
+            resume_str = Some(val.clone());
         } else if let Some(val) = arg.strip_prefix("--resume=") {
             resume_str = Some(val.to_string());
         } else if arg == "--auto" {
@@ -82,10 +81,9 @@ where
             no_color = true;
         } else if arg == "--profile" {
             i += 1;
-            if i >= args.len() {
-                return Err("error: --profile requires a tier argument (auto, fast, standard, high-risk)".to_string());
-            }
-            let p = args[i].clone();
+            let p = args.get(i).ok_or_else(|| {
+                "error: --profile requires a tier argument (auto, fast, standard, high-risk)".to_string()
+            })?.clone();
             if !matches!(p.as_str(), "auto" | "fast" | "standard" | "high-risk") {
                 return Err(format!("error: invalid profile '{p}'. Choose from auto, fast, standard, high-risk"));
             }

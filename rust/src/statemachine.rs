@@ -90,8 +90,10 @@ pub fn convergence_state(
     if wave >= max_total_waves {
         return CAPPED;
     }
-    if !history.is_empty() && count >= *history.iter().min().unwrap() {
-        return STALLED;
+    if let Some(&min_h) = history.iter().min() {
+        if count >= min_h {
+            return STALLED;
+        }
     }
     CONVERGING
 }

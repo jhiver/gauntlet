@@ -198,7 +198,13 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         let table = builtin_defaults();
-        toml::Value::Table(table).try_into().unwrap()
+        toml::Value::Table(table).try_into().unwrap_or_else(|_| Config {
+            harnesses: HashMap::new(),
+            roles: HashMap::new(),
+            policy: PolicyConfig::default(),
+            fallback: FallbackConfig::default(),
+            extra: HashMap::new(),
+        })
     }
 }
 
@@ -266,7 +272,7 @@ on_crash = "retry_once_then_next"
 on_invalid_output = "retry_once_then_next"
 max_attempts_per_task = 3
 "#;
-    toml::from_str(toml_str).expect("builtin defaults must be valid TOML")
+    toml::from_str(toml_str).unwrap_or_default()
 }
 
 /// Deep merge: tables merge recursively, arrays/scalars are replaced.

@@ -332,7 +332,18 @@ impl SubprocessAdapter {
             Err(e) => return RunResult::new(FailureKind::Crash, None, out_path, format!("cannot create err file: {}", e)),
         };
 
-        let mut cmd = Command::new(&argv[0]);
+        let prog = match argv.first() {
+            Some(p) => p,
+            None => {
+                return RunResult::new(
+                    FailureKind::Crash,
+                    None,
+                    out_path,
+                    "empty argv for harness command".to_string(),
+                )
+            }
+        };
+        let mut cmd = Command::new(prog);
         if argv.len() > 1 {
             cmd.args(&argv[1..]);
         }
