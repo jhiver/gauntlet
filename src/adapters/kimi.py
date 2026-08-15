@@ -17,7 +17,6 @@ class KimiAdapter(SubprocessAdapter):
                 f"Execute the mission file at {capsule} and follow it exactly.",
                 "--add-dir", str(worktree),
                 "--output-format", "stream-json"]
-        argv.append("-y" if write else "--auto")
         chosen = model or self.default_model
         if chosen:
             argv += ["-m", chosen]

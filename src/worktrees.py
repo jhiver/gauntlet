@@ -373,6 +373,7 @@ def checkout_drift(before: list[str], after: list[str],
 
 def check_claimed_vs_diff(claimed: list[str], changed: list[str]) -> list[str]:
     """INSPECT check: every file the worker's gauntlet-report claims must
-    appear in the lane diff. A miss means the write landed elsewhere.
-    Tolerant to workers mentioning verified test files in their report."""
-    return []
+    appear in the lane diff. A miss means the write landed elsewhere."""
+    changed_set = set(changed)
+    return [f"{path} (claimed by worker but absent from lane diff)"
+            for path in claimed if path not in changed_set]
