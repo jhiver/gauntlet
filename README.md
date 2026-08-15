@@ -39,35 +39,28 @@ No LLM sits in the control loop. Instead, specialized AI models fill strictly bo
 In Gauntlet, no single agent does everything. Tasks are strictly segregated into 5 specialized roles to ensure checks, balances, and zero sycophancy:
 
 ```mermaid
-graph TD
+flowchart TD
     subgraph Planning & Execution
-        A[<b>1. Planner</b><br><i>Slices problem into orthogonal lanes</i>] -->|Disjoint Worktrees| B[<b>2. Implementer</b><br><i>Builds features in parallel</i>]
+        A["<b>1. Planner</b><br><i>Slices problem into orthogonal lanes</i>"] -->|Disjoint Worktrees| B["<b>2. Implementer</b><br><i>Builds features in parallel</i>"]
     end
 
     subgraph Adversarial Audit & Judgment
-        B -->|Merged Candidate| C[<b>3. Reviewer</b><br><i>Adversarial Auditor: HATES what they see</i>]
-        C -->|Unfiltered Finding Groups| D[<b>4. Judge</b><br><i>Batch Arbitrator: Formal Propositional Logic</i>]
+        B -->|Merged Candidate| C["<b>3. Reviewer</b><br><i>Adversarial Auditor: HATES what they see</i>"]
+        C -->|Unfiltered Finding Groups| D["<b>4. Judge</b><br><i>Batch Arbitrator: Formal Propositional Logic</i>"]
     end
 
     subgraph Targeted Convergence
-        D -->|Valid Blocking Defects| E[<b>5. Fixer</b><br><i>Targeted surgical fix wave</i>]
+        D -->|Valid Blocking Defects| E["<b>5. Fixer</b><br><i>Targeted surgical fix wave</i>"]
         E -->|Candidate Wave N+1| C
-        D -->|Zero Blocking Defects| F[<b>✨ Polish & Deliver</b>]
+        D -->|Zero Blocking Defects| F["<b>✨ Polish & Deliver</b>"]
     end
 
-    classDef plan fill:#e1f5fe,stroke:#0288d1,stroke-width:2px;
-    classDef imp fill:#e8f5e9,stroke:#388e3c,stroke-width:2px;
-    classDef rev fill:#fff3e0,stroke:#f57c00,stroke-width:2px;
-    classDef judge fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px;
-    classDef fix fill:#ffebee,stroke:#d32f2f,stroke-width:2px;
-    classDef deliver fill:#e0f2f1,stroke:#00796b,stroke-width:2px;
-
-    class A plan;
-    class B imp;
-    class C rev;
-    class D judge;
-    class E fix;
-    class F deliver;
+    style A fill:#0f3854,stroke:#38bdf8,stroke-width:2px,color:#ffffff
+    style B fill:#064e3b,stroke:#34d399,stroke-width:2px,color:#ffffff
+    style C fill:#78350f,stroke:#fbbf24,stroke-width:2px,color:#ffffff
+    style D fill:#581c87,stroke:#c084fc,stroke-width:2px,color:#ffffff
+    style E fill:#7f1d1d,stroke:#f87171,stroke-width:2px,color:#ffffff
+    style F fill:#134e4a,stroke:#2dd4bf,stroke-width:2px,color:#ffffff
 ```
 
 | Role | Responsibility | Philosophy |
@@ -87,24 +80,24 @@ Using a single model for both coding and reviewing creates an echo chamber. Gaun
 ```mermaid
 flowchart LR
     subgraph Role Execution
-        R[Role Request] --> H1[<b>Link 1: Primary Harness</b><br>e.g. Gemini 3.7 Flash High]
+        R["<b>Role Request</b>"] --> H1["<b>Link 1: Primary Harness</b><br>Gemini 3.7 Flash High"]
     end
 
     subgraph Self-Healing Fallback Chain
-        H1 -->|Rate Limit / 429| B1[Backoff & Retry]
-        H1 -->|Quota Exceeded| CB1[Open Circuit Breaker]
-        CB1 --> H2[<b>Link 2: Secondary Harness</b><br>e.g. Codex GPT-5.6 Sol xhigh]
-        H2 -->|Unavailable / Crash| H3[<b>Link 3: Tertiary Harness</b><br>e.g. Kimi K3 / DeepSeek]
-        H3 -->|Chain Exhausted| H4[<b>Terminal: Human Director</b>]
+        H1 -->|Rate Limit / 429| B1["<b>Backoff & Retry</b>"]
+        H1 -->|Quota Exceeded| CB1["<b>Open Circuit Breaker</b>"]
+        CB1 --> H2["<b>Link 2: Secondary Harness</b><br>Codex GPT-5.6 Sol (xhigh)"]
+        H2 -->|Unavailable / Crash| H3["<b>Link 3: Tertiary Harness</b><br>Kimi K3 / DeepSeek"]
+        H3 -->|Chain Exhausted| H4["<b>Terminal: Human Director</b>"]
     end
 
-    classDef primary fill:#e3f2fd,stroke:#1565c0,stroke-width:2px;
-    classDef fallback fill:#fff8e1,stroke:#ff8f00,stroke-width:2px;
-    classDef terminal fill:#fbe9e7,stroke:#d84315,stroke-width:2px;
-
-    class H1 primary;
-    class H2,H3 fallback;
-    class H4 terminal;
+    style R fill:#1e293b,stroke:#94a3b8,stroke-width:2px,color:#ffffff
+    style H1 fill:#0f3854,stroke:#38bdf8,stroke-width:2px,color:#ffffff
+    style B1 fill:#78350f,stroke:#fbbf24,stroke-width:2px,color:#ffffff
+    style CB1 fill:#7f1d1d,stroke:#f87171,stroke-width:2px,color:#ffffff
+    style H2 fill:#581c87,stroke:#c084fc,stroke-width:2px,color:#ffffff
+    style H3 fill:#064e3b,stroke:#34d399,stroke-width:2px,color:#ffffff
+    style H4 fill:#7c2d12,stroke:#fb923c,stroke-width:2px,color:#ffffff
 ```
 
 - **Speed vs Reasoning Pareto Frontier**: Fast, high-context models (like *Gemini 3.7 Flash*) handle high-throughput parallel implementations, while deep reasoning models (*GPT-5.6 Sol / Kimi K3*) perform adversarial audits and judgments.
