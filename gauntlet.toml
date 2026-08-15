@@ -97,7 +97,7 @@ lane_timeout_s = 5400
 [fallback]
 on_quota = "next_and_break"
 on_auth = "break"
-on_rate_limit = "backoff_retry_then_next"
+on_rate_limit = "next"
 on_model_unavailable = "next"
 on_timeout = "retry_once_then_next"
 on_crash = "retry_once_then_next"

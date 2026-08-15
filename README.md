@@ -12,7 +12,8 @@
 
 [The Vision](#-the-vision) •
 [The 5 Core Roles](#-the-5-core-roles) •
-[Multi-Model Synergy](#-multi-model--multi-harness-synergy) •
+[Supported Harnesses](#-supported-harness-adapters) •
+[Mix & Match Recipes](#-mix--match-configurations) •
 [State Machine Workflow](#-state-machine-lifecycle) •
 [Quickstart](#-quickstart) •
 [Skills](#-skills-integration)
@@ -23,88 +24,176 @@
 
 ## 🌟 The Vision
 
-Giving an AI agent free rein over a complex codebase usually leads to three catastrophic failure modes:
-1. **Workspace Drift & Collisions**: Parallel agents edit files they don't own, hallucinate unrequested refactors, or conflict with each other.
-2. **Review Blindspots & Sycophancy**: The same AI that wrote the code reviews its own PR with an inherent bias, missing edge cases and introducing architectural bloat.
-3. **Infinite Regression Loops**: Fixing bug A introduces bug B, leading to infinite retries, burned tokens, and degraded code quality.
+### Why Autonomous Engineering Demands Mechanical Containment
 
-Inspired by the pioneering philosophy of the Gauntlet Loop ([robonuggets/gauntlet-loop](https://github.com/robonuggets/gauntlet-loop)), **Gauntlet Engine** **formalizes and industrializes** this paradigm into a production-grade, high-assurance engineering platform.
+When developers hand a complex software task to a single AI agent, failure usually stems from three failure modes:
+1. **Scope Bloat & Hallucinated Regressions**: The agent edits files outside its mandate, introduces subtle syntax breaks, or refactors unrelated modules.
+2. **Self-Review Confirmation Bias**: An agent that wrote a flawed implementation is statistically incapable of finding its own subtle logical defects during a self-check.
+3. **Infinite Fix Loops**: When prompted to fix an issue, an agent introduces another bug, oscillating indefinitely between errors.
 
-Instead of treating autonomous coding as a loose conversational loop, Gauntlet Engine enforces a **deterministic, invariant-bound state machine**:
-- **Zero LLM in the control loop**: State transitions, Git isolation, gate executions, and convergence decisions are 100% mechanical and deterministic.
-- **Role specialization**: LLMs fill bounded, sandboxed roles with distinct objective functions (builder vs adversarial auditor vs propositional judge).
-- **Mathematical guarantees**: Fix waves are strictly bounded by mathematical convergence ($E_n < \min(E_0 \dots E_{n-1})$), mathematically preventing oscillation and endless loops.
+### The Gauntlet Paradigm: Industrialization of Multi-Agent Engineering
+
+**Gauntlet Engine** turns autonomous software engineering into a **deterministic, invariant-bound assembly line**:
+- **Mechanical Containment**: Agents run in isolated Git worktrees. Diffs touching files outside strict lane ownership (`owns`) or touching forbidden paths (`forbidden`) are **mechanically rejected** before they ever hit the codebase.
+- **Adversarial Tri-Role Auditing**: Implementation diffs are independently audited by an adversarial `reviewer` and filtered through a propositional `judge` that deduplicates root causes and rejects non-actionable claims.
+- **Mathematical Convergence Guarantee**: Each fix wave must strictly reduce the number of blocking defects ($E_n < \min(E_0 \dots E_{n-1})$). If defect counts oscillate or stall, Gauntlet halts immediately to protect the repository.
 
 ---
 
 ## 🎭 The 5 Core Roles
 
-In Gauntlet, no single agent does everything. Tasks are strictly segregated into 5 specialized roles to ensure checks, balances, and zero sycophancy:
+In Gauntlet, no agent is a generalist. Every step is executed by a specialized persona with a dedicated system prompt, capability profile, and output schema:
 
 ```mermaid
 flowchart TD
-    subgraph Planning & Execution
-        A["<b>1. Planner</b><br><i>Slices problem into orthogonal lanes</i>"] -->|Disjoint Worktrees| B["<b>2. Implementer</b><br><i>Builds features in parallel</i>"]
+    subgraph Planning Phase
+        P["<b>1. PLANNER</b><br><i>Slices problem into strictly orthogonal Git lanes</i>"]
     end
 
-    subgraph Adversarial Audit & Judgment
-        B -->|Merged Candidate| C["<b>3. Reviewer</b><br><i>Adversarial Auditor: HATES what they see</i>"]
-        C -->|Unfiltered Finding Groups| D["<b>4. Judge</b><br><i>Batch Arbitrator: Formal Propositional Logic</i>"]
+    subgraph Execution & Containment Phase
+        I1["<b>2. IMPLEMENTER (Lane 1)</b><br><i>Isolated worktree diff</i>"]
+        I2["<b>2. IMPLEMENTER (Lane 2)</b><br><i>Isolated worktree diff</i>"]
+        P --> I1
+        P --> I2
     end
 
-    subgraph Targeted Convergence
-        D -->|Valid Blocking Defects| E["<b>5. Fixer</b><br><i>Targeted surgical fix wave</i>"]
-        E -->|Candidate Wave N+1| C
-        D -->|Zero Blocking Defects| F["<b>✨ Polish & Deliver</b>"]
+    subgraph Adversarial Audit Phase
+        I1 --> R["<b>3. REVIEWER</b><br><i>Adversarial audit against contracts (AC/INV/NG)</i>"]
+        I2 --> R
+        R --> J["<b>4. JUDGE</b><br><i>Root-cause deduplication & blocking claim triage</i>"]
     end
 
-    style A fill:#0f3854,stroke:#38bdf8,stroke-width:2px,color:#ffffff
-    style B fill:#064e3b,stroke:#34d399,stroke-width:2px,color:#ffffff
-    style C fill:#78350f,stroke:#fbbf24,stroke-width:2px,color:#ffffff
-    style D fill:#581c87,stroke:#c084fc,stroke-width:2px,color:#ffffff
-    style E fill:#7f1d1d,stroke:#f87171,stroke-width:2px,color:#ffffff
-    style F fill:#134e4a,stroke:#2dd4bf,stroke-width:2px,color:#ffffff
+    subgraph Convergence & Delivery Phase
+        J -->|"Valid Blocking Defects"| F["<b>5. FIXER</b><br><i>Targeted fix on isolated lane</i>"]
+        F -->|"Candidate Wave N+1"| R
+        J -->|"Zero Blocking Claims"| D["<b>DIRECTOR</b><br><i>Final rebase, test gates & clean delivery</i>"]
+    end
+
+    style P fill:#0f3854,stroke:#38bdf8,stroke-width:2px,color:#ffffff
+    style I1 fill:#064e3b,stroke:#34d399,stroke-width:2px,color:#ffffff
+    style I2 fill:#064e3b,stroke:#34d399,stroke-width:2px,color:#ffffff
+    style R fill:#78350f,stroke:#fbbf24,stroke-width:2px,color:#ffffff
+    style J fill:#581c87,stroke:#c084fc,stroke-width:2px,color:#ffffff
+    style F fill:#7f1d1d,stroke:#f87171,stroke-width:2px,color:#ffffff
+    style D fill:#065f46,stroke:#34d399,stroke-width:2px,color:#ffffff
 ```
 
-| Role | Responsibility | Philosophy |
-| :--- | :--- | :--- |
-| **`planner`** | Analyzes the contract and partitions the work into mathematically disjoint `[[lanes]]` (`owns` vs `forbidden` file globs). | *Never invent fake parallelism; slice work cleanly.* |
-| **`implementer`** | Writes code and local tests inside an isolated, ephemeral Git worktree. | *Fast, focused, confined strictly to owned files.* |
-| **`reviewer`** | A read-only adversarial auditor that inspects the complete integrated diff. | *Antoine de Saint-Exupéry: "Perfection is achieved not when there is nothing left to add, but when there is nothing left to take away."* |
-| **`judge`** | An independent batch arbitrator that deduplicates root causes and applies formal criteria (`FIX`, `REDESIGN`, `REPORT_ONLY`, `DISMISS`). | *Zero emotion, purely propositional logic.* |
-| **`fixer`** | Performs focused surgical repairs on validated root causes in a fresh, orthogonal fix wave. | *Minimal blast radius, net reduction in complexity.* |
+| Role | Access | Responsibility | Key Output Block |
+| :--- | :--- | :--- | :--- |
+| **`planner`** | Read-Only | Analyzes objectives, Acceptance Criteria (AC), Invariants (INV), and defines disjoint `owns` file scopes. | ```` ```gauntlet-plan ```` |
+| **`implementer`** | Write (Worktree) | Writes code and local tests strictly within the assigned Git worktree. | ```` ```gauntlet-report ```` |
+| **`reviewer`** | Read-Only | Performs adversarial code audit against Acceptance Criteria and Invariants. | ```` ```gauntlet-verdict ```` |
+| **`judge`** | Read-Only | Groups findings by root cause, discards style nitpicks, determines blocking defects. | ```` ```gauntlet-verdict ```` |
+| **`fixer`** | Write (Worktree) | Resolves validated blocking defects in a fresh, isolated fix worktree. | ```` ```gauntlet-report ```` |
+| **`director`** | Human / Agent | Supervises milestones, reviews architectural redesign proposals, approves deliveries. | Interactive CLI / Checkpoints |
 
 ---
 
-## ⚡ Multi-Model & Multi-Harness Synergy
+## 🔌 Supported Harness Adapters
 
-Using a single model for both coding and reviewing creates an echo chamber. Gauntlet Engine natively orchestrates **heterogeneous model ensembles** with self-healing fallback chains and circuit breakers:
+Gauntlet Engine connects directly to all major agentic CLIs and models through a unified, zero-overhead subprocess bridge:
+
+| Harness | CLI Command | Supported Frontier Models | Capabilities | Best Suited For |
+| :--- | :--- | :--- | :--- | :--- |
+| **`agy`** | `agy` | `google/gemini-3.7-flash`, `gemini-3.7-flash-lite`, `gemini-pro` | Read & Write, Agentic Tool Use | Ultra-fast parallel implementation & planning |
+| **`cmd`** | `cmd` | **55+ models**: `claude-sonnet-5`, `gpt-5.6-sol`, `gpt-5.6-luna`, `deepseek-v4-pro`, `qwen3.8-max`, `glm-5.3`, `minimax-m3` | Read & Write, `--yolo`, `--permission-mode plan` | Universal multi-model hub, adversarial audit, judgment |
+| **`codex`** | `codex` | `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.5`, `gpt-5.3-codex` (Reasoning: `low`, `medium`, `high`, `xhigh`) | Read & Write, Headless JSON streaming | Deep propositional reasoning, invariant verification |
+| **`kimi`** | `kimi` | `moonshotai/kimi-k3`, `kimi-k2.7-code` (1M token context) | Read & Write, Non-interactive prompt mode | Massive codebase ingestion, full-repo audits |
+| **`reasonix`** | `reasonix` | `deepseek/deepseek-v4-flash`, `deepseek-v4-pro` | Read & Write, Ephemeral sessions | Cost-effective mathematical reasoning & fixes |
+| **`human`** | Interactive | Live developer console | Interactive stdin/stdout | Critical architecture decisions, final delivery review |
+| **`echo`** | In-Memory | Deterministic mock engine | Instant mock responses | Dry runs, automated CI test suites |
+
+---
+
+## 🎛️ Mix & Match Configurations
+
+Using a single model for both implementation and audit creates an echo chamber. Gauntlet allows complete freedom to **mix and match any model and harness for any role**, with **zero-delay immediate failover** (no exponential backoff sleeps—immediate cascade to the next link for maximum throughput):
 
 ```mermaid
 flowchart LR
-    subgraph Role Execution
-        R["<b>Role Request</b>"] --> H1["<b>Link 1: Primary Harness</b><br>Gemini 3.7 Flash High"]
+    subgraph Role Invocation
+        R["<b>Role Task</b>"] --> H1["<b>Link 1 (Primary)</b><br>Gemini 3.7 Flash High"]
     end
 
-    subgraph Self-Healing Fallback Chain
-        H1 -->|Rate Limit / 429| B1["<b>Backoff & Retry</b>"]
-        H1 -->|Quota Exceeded| CB1["<b>Open Circuit Breaker</b>"]
-        CB1 --> H2["<b>Link 2: Secondary Harness</b><br>Codex GPT-5.6 Sol (xhigh)"]
-        H2 -->|Unavailable / Crash| H3["<b>Link 3: Tertiary Harness</b><br>Kimi K3 / DeepSeek"]
-        H3 -->|Chain Exhausted| H4["<b>Terminal: Human Director</b>"]
+    subgraph Immediate Zero-Delay Failover
+        H1 -->|"Rate Limit / 429"| CB1["<b>Instant Cascade</b><br><i>0s Backoff</i>"]
+        CB1 --> H2["<b>Link 2 (Secondary)</b><br>CommandCode Claude Sonnet 5"]
+        H2 -->|"Unavailable / Error"| H3["<b>Link 3 (Tertiary)</b><br>Codex GPT-5.6 Sol (xhigh)"]
+        H3 -->|"Chain Exhausted"| H4["<b>Terminal Fallback</b><br>Human Director"]
     end
 
     style R fill:#1e293b,stroke:#94a3b8,stroke-width:2px,color:#ffffff
     style H1 fill:#0f3854,stroke:#38bdf8,stroke-width:2px,color:#ffffff
-    style B1 fill:#78350f,stroke:#fbbf24,stroke-width:2px,color:#ffffff
     style CB1 fill:#7f1d1d,stroke:#f87171,stroke-width:2px,color:#ffffff
     style H2 fill:#581c87,stroke:#c084fc,stroke-width:2px,color:#ffffff
     style H3 fill:#064e3b,stroke:#34d399,stroke-width:2px,color:#ffffff
     style H4 fill:#7c2d12,stroke:#fb923c,stroke-width:2px,color:#ffffff
 ```
 
-- **Speed vs Reasoning Pareto Frontier**: Fast, high-context models (like *Gemini 3.7 Flash*) handle high-throughput parallel implementations, while deep reasoning models (*GPT-5.6 Sol / Kimi K3*) perform adversarial audits and judgments.
-- **Circuit Breaker Resilience**: If an API provider suffers outages, rate limits, or auth expiration, Gauntlet trips a per-run circuit breaker and seamlessly cascades to the next configured provider without losing state.
+### Recipe 1: The Frontier Cross-Provider Ensemble ([`gauntlet.toml`](file:///Users/jhiver/aios/projects/gauntlet/gauntlet.toml))
+Combining Gemini for high-speed implementation, Claude Sonnet 5 for adversarial review, and GPT-5.6 Sol for formal judgment:
+
+```toml
+[roles.implementer]
+chain = [
+  { harness = "agy", model = "google/gemini-3.7-flash" },
+  { harness = "cmd", model = "claude-sonnet-5" },
+]
+
+[roles.reviewer]
+chain = [
+  { harness = "cmd", model = "claude-sonnet-5" },
+  { harness = "codex", model = "gpt-5.6-sol", effort = "high" },
+]
+
+[roles.judge]
+chain = [
+  { harness = "codex", model = "gpt-5.6-sol", effort = "xhigh" },
+  { harness = "cmd", model = "claude-sonnet-5" },
+]
+```
+
+### Recipe 2: CommandCode 55-Model Multi-Hub ([`gauntlet.cmd.toml`](file:///Users/jhiver/aios/projects/gauntlet/gauntlet.cmd.toml))
+Leveraging CommandCode's unified CLI to route different models per role without setting up separate tooling:
+
+```toml
+[roles.implementer]
+chain = [{ harness = "cmd", model = "claude-sonnet-5" }]
+
+[roles.reviewer]
+chain = [
+  { harness = "cmd", model = "gpt-5.6-sol", effort = "high" },
+  { harness = "cmd", model = "deepseek/deepseek-v4-pro" },
+]
+
+[roles.judge]
+chain = [{ harness = "cmd", model = "gpt-5.6-sol", effort = "high" }]
+```
+
+### Recipe 3: Pure AGY Stack ([`gauntlet.agy.toml`](file:///Users/jhiver/aios/projects/gauntlet/gauntlet.agy.toml))
+High-throughput 100% Google Gemini configuration:
+
+```toml
+[roles.implementer]
+chain = [{ harness = "agy", model = "google/gemini-3.7-flash" }]
+
+[roles.reviewer]
+chain = [{ harness = "agy", model = "google/gemini-3.7-flash" }]
+
+[roles.judge]
+chain = [{ harness = "agy", model = "google/gemini-3.7-flash" }]
+```
+
+### Zero-Downtime Immediate Failover Policy
+```toml
+[fallback]
+on_rate_limit = "next"            # Instant cascade to next link on 429/rate limit
+on_quota = "next_and_break"       # Trip circuit breaker and cascade immediately
+on_model_unavailable = "next"     # Skip unavailable models instantly
+on_timeout = "retry_once_then_next"
+on_crash = "retry_once_then_next"
+max_attempts_per_task = 3
+```
 
 ---
 

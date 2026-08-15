@@ -258,7 +258,7 @@ fn default_on_auth() -> String {
     "break".to_string()
 }
 fn default_on_rate_limit() -> String {
-    "backoff_retry_then_next".to_string()
+    "next".to_string()
 }
 fn default_on_model_unavailable() -> String {
     "next".to_string()
@@ -276,7 +276,7 @@ fn default_max_attempts() -> usize {
     3
 }
 fn default_backoff_s() -> f64 {
-    30.0
+    0.0
 }
 
 impl Default for FallbackPolicy {

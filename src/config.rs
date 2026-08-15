@@ -134,7 +134,7 @@ fn default_on_auth() -> String {
     "break".to_string()
 }
 fn default_on_rate_limit() -> String {
-    "backoff_retry_then_next".to_string()
+    "next".to_string()
 }
 fn default_on_model_unavailable() -> String {
     "next".to_string()
@@ -265,7 +265,7 @@ lane_timeout_s = 5400
 [fallback]
 on_quota = "next_and_break"
 on_auth = "break"
-on_rate_limit = "backoff_retry_then_next"
+on_rate_limit = "next"
 on_model_unavailable = "next"
 on_timeout = "retry_once_then_next"
 on_crash = "retry_once_then_next"
