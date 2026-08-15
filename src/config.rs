@@ -195,6 +195,14 @@ impl Default for FallbackConfig {
     }
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct WorktreeConfig {
+    #[serde(default)]
+    pub symlinks: Vec<String>,
+    #[serde(flatten)]
+    pub extra: HashMap<String, toml::Value>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Config {
     #[serde(default)]
@@ -205,6 +213,8 @@ pub struct Config {
     pub policy: PolicyConfig,
     #[serde(default)]
     pub fallback: FallbackConfig,
+    #[serde(default)]
+    pub worktree: WorktreeConfig,
     #[serde(flatten)]
     pub extra: HashMap<String, toml::Value>,
 }
@@ -217,6 +227,7 @@ impl Default for Config {
             roles: HashMap::new(),
             policy: PolicyConfig::default(),
             fallback: FallbackConfig::default(),
+            worktree: WorktreeConfig::default(),
             extra: HashMap::new(),
         })
     }
@@ -287,6 +298,9 @@ on_timeout = "retry_once_then_next"
 on_crash = "retry_once_then_next"
 on_invalid_output = "retry_once_then_next"
 max_attempts_per_task = 3
+
+[worktree]
+symlinks = []
 "#;
     toml::from_str(toml_str).unwrap_or_default()
 }
@@ -458,6 +472,31 @@ pub fn validate_config(cfg: &toml::Table) -> Result<(), ConfigError> {
         }
     }
 
+    if let Some(worktree_val) = cfg.get("worktree") {
+        let worktree = match worktree_val {
+            toml::Value::Table(t) => t,
+            _ => return Err(ConfigError::Message("worktree must be a table".to_string())),
+        };
+        if let Some(symlinks_val) = worktree.get("symlinks") {
+            match symlinks_val {
+                toml::Value::Array(arr) => {
+                    for item in arr {
+                        if item.as_str().is_none() {
+                            return Err(ConfigError::Message(
+                                "worktree 'symlinks' must be an array of strings".to_string(),
+                            ));
+                        }
+                    }
+                }
+                _ => {
+                    return Err(ConfigError::Message(
+                        "worktree 'symlinks' must be an array of strings".to_string(),
+                    ));
+                }
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -620,7 +659,41 @@ mod tests {
             }]
         );
         assert_eq!(cfg.fallback.max_attempts_per_task, 3);
+        assert_eq!(cfg.worktree.symlinks, Vec::<String>::new());
     }
+
+    #[test]
+    fn test_worktree_symlinks_config() {
+        let dir = tempdir().unwrap();
+        let override_file = dir.path().join("worktree.toml");
+        std::fs::write(
+            &override_file,
+            "[worktree]\nsymlinks = [\".venv\", \"cache\", \"vendor\"]\n",
+        )
+        .unwrap();
+        let cfg = load_config(Some(dir.path()), None, Some(&override_file)).unwrap();
+        assert_eq!(
+            cfg.worktree.symlinks,
+            vec![".venv".to_string(), "cache".to_string(), "vendor".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_invalid_worktree_symlinks_rejected() {
+        let dir = tempdir().unwrap();
+        let override_file1 = dir.path().join("bad1.toml");
+        std::fs::write(&override_file1, "[worktree]\nsymlinks = \"scalar\"\n").unwrap();
+        assert!(load_config(Some(dir.path()), None, Some(&override_file1)).is_err());
+
+        let override_file2 = dir.path().join("bad2.toml");
+        std::fs::write(&override_file2, "[worktree]\nsymlinks = [1, 2, 3]\n").unwrap();
+        assert!(load_config(Some(dir.path()), None, Some(&override_file2)).is_err());
+
+        let override_file3 = dir.path().join("bad3.toml");
+        std::fs::write(&override_file3, "worktree = \"not_a_table\"\n").unwrap();
+        assert!(load_config(Some(dir.path()), None, Some(&override_file3)).is_err());
+    }
+
 
     #[test]
     fn test_merge_precedence() {
