@@ -38,7 +38,7 @@ use crate::verdicts::{
 use crate::worktrees::{
     base_commit, branch_exists, check_claimed_vs_diff, check_lane_diff, checkout_drift,
     checkout_status, commit_all, create_worktree, delete_branch, discard_changes, ff_merge,
-    find_overlaps, find_worktree_for_branch, is_git_repo, lane_changed_files, merge_branch,
+    find_overlaps, find_worktree_for_branch, globs_may_overlap, is_git_repo, lane_changed_files, merge_branch,
     rebase_onto, remove_worktree, rev_parse, staged_changes, tracked_files, Git, GitError,
     LaneOverlap,
 };
@@ -2100,8 +2100,87 @@ impl Orchestrator {
                     overlaps = self._check_overlaps(&lstates);
                 }
                 if !overlaps.is_empty() {
-                    let context = format!("fix-wave lanes overlap: {overlaps:?}\napprove to proceed anyway");
-                    if !self._ask_human("plan-fix", &context) {
+                    let should_coalesce = self.auto
+                        || !self._ask_human(
+                            "plan-fix",
+                            &format!(
+                                "fix-wave lanes overlap: {overlaps:?}\ncoalesce overlapping lanes automatically"
+                            ),
+                        );
+                    if should_coalesce {
+                        let repo_files = tracked_files(&self.git, &self.repo_path())
+                            .unwrap_or_default();
+                        let mut merged = lstates;
+                        let mut changed = true;
+                        while changed {
+                            changed = false;
+                            let mut pair = None;
+                            for i in 0..merged.len() {
+                                for j in (i + 1)..merged.len() {
+                                    let owns_i = &merged[i].owns;
+                                    let owns_j = &merged[j].owns;
+                                    let has_overlap = owns_i.iter().any(|ga| {
+                                        owns_j
+                                            .iter()
+                                            .any(|gb| globs_may_overlap(ga, gb, &repo_files))
+                                    });
+                                    if has_overlap {
+                                        pair = Some((i, j));
+                                        break;
+                                    }
+                                }
+                                if pair.is_some() {
+                                    break;
+                                }
+                            }
+                            if let Some((idx_a, idx_b)) = pair {
+                                let la = merged[idx_a].clone();
+                                let lb = merged[idx_b].clone();
+
+                                let mut combined_owns = la.owns;
+                                for o in lb.owns {
+                                    if !combined_owns.contains(&o) {
+                                        combined_owns.push(o);
+                                    }
+                                }
+                                let mut combined_addr = la.addresses;
+                                for a in lb.addresses {
+                                    if !combined_addr.contains(&a) {
+                                        combined_addr.push(a);
+                                    }
+                                }
+                                let mut combined_tests = la.tests;
+                                for t in lb.tests {
+                                    if !combined_tests.contains(&t) {
+                                        combined_tests.push(t);
+                                    }
+                                }
+                                let combined_brief = if la.brief != lb.brief {
+                                    format!("{}\nAlso: {}", la.brief, lb.brief)
+                                } else {
+                                    la.brief
+                                };
+
+                                let new_lane = LaneState {
+                                    id: format!("L{}", idx_a + 1),
+                                    owns: combined_owns,
+                                    forbidden: Vec::new(),
+                                    tests: combined_tests,
+                                    brief: combined_brief,
+                                    addresses: combined_addr,
+                                    ..Default::default()
+                                };
+                                merged.remove(idx_b);
+                                merged.remove(idx_a);
+                                merged.insert(idx_a, new_lane);
+                                changed = true;
+                            }
+                        }
+                        for (idx, lane) in merged.iter_mut().enumerate() {
+                            lane.id = format!("L{}", idx + 1);
+                        }
+                        lstates = merged;
+                    } else {
                         return Err(GauntletError::blocked(format!(
                             "fix-wave planner could not produce orthogonal lanes: {overlaps:?}"
                         )));
