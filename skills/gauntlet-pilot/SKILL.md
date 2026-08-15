@@ -15,16 +15,16 @@ Gauntlet can be executed via the compiled Rust binary `gauntlet` or the Python e
 
 ```bash
 # Standard autonomous execution (with automatic Pareto model routing)
-./gauntlet missions/<slug>.md
+./gauntlet _missions/<slug>.md
 
 # Super-Auto profile (analyzes blast radius and auto-tunes model depth)
-./gauntlet --profile auto missions/<slug>.md
+./gauntlet --profile auto _missions/<slug>.md
 
 # Pure AGY (Gemini 3.7 Flash High for all roles)
-./gauntlet --config gauntlet.agy.toml missions/<slug>.md
+./gauntlet --config gauntlet.agy.toml _missions/<slug>.md
 
 # Interactive mode (pauses for director approval at plan & delivery checkpoints)
-./gauntlet --interactive missions/<slug>.md
+./gauntlet --interactive _missions/<slug>.md
 
 # Resume an interrupted or blocked mission
 ./gauntlet --resume .missions/<YYYYMMDD>-<slug>

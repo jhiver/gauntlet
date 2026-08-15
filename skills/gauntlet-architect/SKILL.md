@@ -24,11 +24,11 @@ You are the **Mission Architect** for the **Gauntlet Engine**. Your job is to tr
 4. **Mechanical Validation Gates**:
    - Configure fast, deterministic mechanical gates (`gates = [...]`) executed automatically after integration (e.g. `cargo test`, `npm test`, `pytest`, `cargo clippy`).
 5. **Dry-Run Verification**:
-   - Validate the contract format and check for glob overlaps using `./gauntlet --dry-run missions/<slug>.md`.
+   - Validate the contract format and check for glob overlaps using `./gauntlet --dry-run _missions/<slug>.md`.
 
 ---
 
-## 2. Mission File Anatomy (`missions/<slug>.md`)
+## 2. Mission File Anatomy (`_missions/<slug>.md`)
 
 Every Gauntlet mission contract begins with a TOML frontmatter (`+++`) followed by structured markdown:
 
@@ -102,12 +102,12 @@ Before finalizing lanes, verify that **all** of the following rules hold true:
 
 ## 4. Verification Workflow
 
-1. Save the mission file in `missions/<slug>.md`.
+1. Save the mission file in `_missions/<slug>.md`.
 2. Run the dry-run validator:
    ```bash
-   ./gauntlet --dry-run missions/<slug>.md
+   ./gauntlet --dry-run _missions/<slug>.md
    # Or using the Rust binary:
-   gauntlet --dry-run missions/<slug>.md
+   gauntlet --dry-run _missions/<slug>.md
    ```
 3. Verify that the output confirms:
    - Zero glob overlap errors.

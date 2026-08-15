@@ -320,9 +320,9 @@ cargo install --path .
 
 ---
 
-### 2. Write a Mission Contract (`missions/my-feature.md`)
+### 2. Write a Mission Contract (`_missions/my-feature.md`)
 
-A Gauntlet mission combines TOML frontmatter (mechanical rules & lanes) and Markdown (human contracts):
+A Gauntlet mission combines TOML frontmatter (mechanical rules & lanes) and Markdown (human contracts) located in `_missions/`:
 
 ```markdown
 +++
@@ -372,16 +372,16 @@ Implement the cache service and REST endpoints with zero regressions.
 
 ```bash
 # 1. Dry run: Verify lane orthogonality and worktree allocation without modifying git
-gauntlet --dry-run missions/my-feature.md
+gauntlet --dry-run _missions/my-feature.md
 
 # 2. Super-Auto mode: Intelligent Pareto routing based on mission risk
-gauntlet --profile auto missions/my-feature.md
+gauntlet --profile auto _missions/my-feature.md
 
 # 3. Pure AGY mode: Run all roles via Gemini 3.7 Flash High
-gauntlet --config gauntlet.agy.toml missions/my-feature.md
+gauntlet --config gauntlet.agy.toml _missions/my-feature.md
 
 # 4. Interactive mode: Pauses for human confirmation at key milestones
-gauntlet --interactive missions/my-feature.md
+gauntlet --interactive _missions/my-feature.md
 ```
 
 ---
