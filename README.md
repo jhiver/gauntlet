@@ -2,7 +2,7 @@
 
 # 🛡️ Gauntlet Engine
 
-**The Autonomous Multi-Agent Engineering Engine with Mechanical Containment & Mathematical Convergence**
+### *Autonomous Multi-Agent Software Engineering with Mechanical Containment & Mathematical Convergence*
 
 [![Rust](https://img.shields.io/badge/Rust-1.80+-orange.svg?logo=rust)](https://www.rust-lang.org)
 [![Tests](https://img.shields.io/badge/Tests-277%20passed-brightgreen.svg)]()
@@ -10,104 +10,153 @@
 [![Dual-Engine](https://img.shields.io/badge/Engine-Rust%20%7C%20Python-blueviolet.svg)]()
 [![License](https://img.shields.io/badge/License-MIT%2FApache--2.0-blue.svg)]()
 
-*Eliminate hallucination, workspace drift, and oscillatory regression loops in AI software engineering.*
-
+[The Vision](#-the-vision) •
+[The 5 Core Roles](#-the-5-core-roles) •
+[Multi-Model Synergy](#-multi-model--multi-harness-synergy) •
+[State Machine Workflow](#-state-machine-lifecycle) •
 [Quickstart](#-quickstart) •
-[Core Architecture](#-core-architecture) •
-[Mission Contracts](#-mission-contracts) •
-[Skills Integration](#-skills-integration) •
-[Configuration](#-configuration--profiles)
+[Skills](#-skills-integration)
 
 </div>
 
 ---
 
-## ⚡ Why Gauntlet Engine?
+## 🌟 The Vision
 
-Naive multi-agent loops and agentic coding tools frequently suffer from four critical failure modes:
-1. **Workspace Drift & Collisions**: Parallel agents overwrite each other's files, touch unowned code, or pollute the main working directory.
-2. **Unchecked Scope Creep**: Agents hallucinate speculative features, ignoring boundary invariants and non-goals.
-3. **Cosmetic Review Bias**: Reviewers either rubber-stamp broken diffs or generate noisy, trivial nitpicks that distract from critical bugs.
-4. **Oscillatory Regression Loops**: Fixes introduce new bugs in an endless circular loop without guaranteed termination.
+Giving an AI agent free rein over a complex codebase usually leads to three catastrophic failure modes:
+1. **Workspace Drift & Collisions**: Parallel agents edit files they don't own, hallucinate unrequested refactors, or conflict with each other.
+2. **Review Blindspots & Sycophancy**: The same AI that wrote the code reviews its own PR with an inherent bias, missing edge cases and introducing architectural bloat.
+3. **Infinite Regression Loops**: Fixing bug A introduces bug B, leading to infinite retries, burned tokens, and degraded code quality.
 
-**Gauntlet Engine** solves these problems through **deterministic mechanical containment** and **formal mathematical convergence**. No LLM sits in the orchestration loop; AI harnesses serve strictly bounded, isolated worker roles governed by a deterministic finite state machine.
+**Gauntlet Engine** solves this by treating autonomous engineering not as a loose chat prompt, but as a **deterministic, invariant-bound state machine**. 
+
+No LLM sits in the control loop. Instead, specialized AI models fill strictly bounded, sandboxed roles governed by mechanical Git isolation and formal mathematical convergence.
 
 ---
 
-## 🏛️ Core Architecture
+## 🎭 The 5 Core Roles
 
-```
-                                 ┌────────────────────────────────────────────────────────┐
-                                 │                 MISSION CONTRACT                       │
-                                 │    AC-* (Acceptance)  INV-* (Invariants)  NG-* (Goals) │
-                                 └───────────────────────────┬────────────────────────────┘
-                                                             │
-                                                             ▼
-                                                    ┌─────────────────┐
-                                                    │   PLAN STAGE    │
-                                                    │ (Auto / Sliced) │
-                                                    └────────┬────────┘
-                                                             │
-                                     ┌───────────────────────┴───────────────────────┐
-                                     ▼                                               ▼
-                         ┌───────────────────────┐                       ┌───────────────────────┐
-                         │   LANE 1 (Worktree)   │                       │   LANE 2 (Worktree)   │
-                         │   owns: ["src/core/*"]│                       │   owns: ["src/api/*"] │
-                         └───────────┬───────────┘                       └───────────┬───────────┘
-                                     │                                               │
-                                     └───────────────────────┬───────────────────────┘
-                                                             ▼
-                                                    ┌─────────────────┐
-                                                    │ MECHANICAL INSP │ (Drift & Glob Containment)
-                                                    └────────┬────────┘
-                                                             ▼
-                                                    ┌─────────────────┐
-                                                    │   INTEGRATION   │ ➔ [ MECHANICAL GATES ]
-                                                    └────────┬────────┘
-                                                             ▼
-                                                    ┌─────────────────┐
-                                                    │ ADVERSARIAL REV │ (Saint-Exupéry subtraction law)
-                                                    └────────┬────────┘
-                                                             ▼
-                                                    ┌─────────────────┐
-                                                    │  BATCH JUDGMENT │
-                                                    └────────┬────────┘
-                                                             │
-                                  ┌──────────────────────────┴──────────────────────────┐
-                                  │                                                     │
-                             (No Claims)                                         (Defects Found)
-                                  ▼                                                     ▼
-                         ┌─────────────────┐                                   ┌─────────────────┐
-                         │   POLISH PASS   │                                   │    PLAN FIX     │
-                         └────────┬────────┘                                   │  (Wave N + 1)   │
-                                  ▼                                            └────────┬────────┘
-                         ┌─────────────────┐                                            │ (Strictly Decreasing:
-                         │ DELIVER / READY │                                            ▼  E_n < min(E_0...E_{n-1}))
-                         └─────────────────┘                                    [ IMPLEMENT WAVE ]
+In Gauntlet, no single agent does everything. Tasks are strictly segregated into 5 specialized roles to ensure checks, balances, and zero sycophancy:
+
+```mermaid
+graph TD
+    subgraph Planning & Execution
+        A[<b>1. Planner</b><br><i>Slices problem into orthogonal lanes</i>] -->|Disjoint Worktrees| B[<b>2. Implementer</b><br><i>Builds features in parallel</i>]
+    end
+
+    subgraph Adversarial Audit & Judgment
+        B -->|Merged Candidate| C[<b>3. Reviewer</b><br><i>Adversarial Auditor: HATES what they see</i>]
+        C -->|Unfiltered Finding Groups| D[<b>4. Judge</b><br><i>Batch Arbitrator: Formal Propositional Logic</i>]
+    end
+
+    subgraph Targeted Convergence
+        D -->|Valid Blocking Defects| E[<b>5. Fixer</b><br><i>Targeted surgical fix wave</i>]
+        E -->|Candidate Wave N+1| C
+        D -->|Zero Blocking Defects| F[<b>✨ Polish & Deliver</b>]
+    end
+
+    classDef plan fill:#e1f5fe,stroke:#0288d1,stroke-width:2px;
+    classDef imp fill:#e8f5e9,stroke:#388e3c,stroke-width:2px;
+    classDef rev fill:#fff3e0,stroke:#f57c00,stroke-width:2px;
+    classDef judge fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px;
+    classDef fix fill:#ffebee,stroke:#d32f2f,stroke-width:2px;
+    classDef deliver fill:#e0f2f1,stroke:#00796b,stroke-width:2px;
+
+    class A plan;
+    class B imp;
+    class C rev;
+    class D judge;
+    class E fix;
+    class F deliver;
 ```
 
-### 1. Contract-Bound Slicing (`AC-*`, `INV-*`, `NG-*`)
-Missions are specified with immutable Acceptance Criteria (`AC-*`), inviolable Anti-Drift Invariants (`INV-*`), and strict Non-Goals (`NG-*`). Agents are legally forbidden from modifying unassigned paths or expanding scope.
+| Role | Responsibility | Philosophy |
+| :--- | :--- | :--- |
+| **`planner`** | Analyzes the contract and partitions the work into mathematically disjoint `[[lanes]]` (`owns` vs `forbidden` file globs). | *Never invent fake parallelism; slice work cleanly.* |
+| **`implementer`** | Writes code and local tests inside an isolated, ephemeral Git worktree. | *Fast, focused, confined strictly to owned files.* |
+| **`reviewer`** | A read-only adversarial auditor that inspects the complete integrated diff. | *Antoine de Saint-Exupéry: "Perfection is achieved not when there is nothing left to add, but when there is nothing left to take away."* |
+| **`judge`** | An independent batch arbitrator that deduplicates root causes and applies formal criteria (`FIX`, `REDESIGN`, `REPORT_ONLY`, `DISMISS`). | *Zero emotion, purely propositional logic.* |
+| **`fixer`** | Performs focused surgical repairs on validated root causes in a fresh, orthogonal fix wave. | *Minimal blast radius, net reduction in complexity.* |
 
-### 2. Orthogonal Worktree Containment
-Parallel lanes run in completely isolated, sibling Git worktrees. The engine mechanically verifies that:
-- Every file changed matches the lane's `owns` globs (`check_lane_diff`).
-- No file claimed by the worker is missing from the diff (`check_claimed_vs_diff`).
-- The main repository checkout suffered **zero drift** during execution (`checkout_drift`).
+---
 
-### 3. Adversarial Contradictory Triad
-- **Implementer**: Concurrently develops code in its sandboxed worktree.
-- **Reviewer**: Strictly read-only auditor instructed to actively find edge cases, omissions, and over-engineering (*"Perfection is achieved not when there is nothing left to add, but when there is nothing left to take away"*).
-- **Judge**: Batch arbitrator that deduplicates root causes and applies formal propositional logic:
-  $$\text{FIX} = \text{justified} \land \text{aligned} \land \big((\text{simplifying} \land \text{equivalent}) \lor (\text{critical} \land \text{proportionate} \land \text{local})\big)$$
+## ⚡ Multi-Model & Multi-Harness Synergy
 
-### 4. Bounded Mathematical Convergence
-Fix waves are permitted if and only if the number of blocking defect groups strictly beats the best historical round:
-$$\text{Defects}_{N} < \min(\text{Defects}_0, \dots, \text{Defects}_{N-1})$$
-If defect counts oscillate or stall, Gauntlet halts immediately with `BLOCKED_CONVERGENCE` to prevent token burning and architectural drift.
+Using a single model for both coding and reviewing creates an echo chamber. Gauntlet Engine natively orchestrates **heterogeneous model ensembles** with self-healing fallback chains and circuit breakers:
 
-### 5. Multi-Harness Circuit Breakers & Fallback Chains
-Role chains seamlessly cascade across multiple LLM providers (AGY/Gemini, Codex/GPT-5, CMD, Kimi, Reasonix) with automated backoff, rate-limit retries, and quota circuit breakers.
+```mermaid
+flowchart LR
+    subgraph Role Execution
+        R[Role Request] --> H1[<b>Link 1: Primary Harness</b><br>e.g. Gemini 3.7 Flash High]
+    end
+
+    subgraph Self-Healing Fallback Chain
+        H1 -->|Rate Limit / 429| B1[Backoff & Retry]
+        H1 -->|Quota Exceeded| CB1[Open Circuit Breaker]
+        CB1 --> H2[<b>Link 2: Secondary Harness</b><br>e.g. Codex GPT-5.6 Sol xhigh]
+        H2 -->|Unavailable / Crash| H3[<b>Link 3: Tertiary Harness</b><br>e.g. Kimi K3 / DeepSeek]
+        H3 -->|Chain Exhausted| H4[<b>Terminal: Human Director</b>]
+    end
+
+    classDef primary fill:#e3f2fd,stroke:#1565c0,stroke-width:2px;
+    classDef fallback fill:#fff8e1,stroke:#ff8f00,stroke-width:2px;
+    classDef terminal fill:#fbe9e7,stroke:#d84315,stroke-width:2px;
+
+    class H1 primary;
+    class H2,H3 fallback;
+    class H4 terminal;
+```
+
+- **Speed vs Reasoning Pareto Frontier**: Fast, high-context models (like *Gemini 3.7 Flash*) handle high-throughput parallel implementations, while deep reasoning models (*GPT-5.6 Sol / Kimi K3*) perform adversarial audits and judgments.
+- **Circuit Breaker Resilience**: If an API provider suffers outages, rate limits, or auth expiration, Gauntlet trips a per-run circuit breaker and seamlessly cascades to the next configured provider without losing state.
+
+---
+
+## 🔄 State Machine Lifecycle
+
+Gauntlet Engine runs a deterministic finite state machine where every transition is recorded in `state.json` and `report.md`:
+
+```mermaid
+stateDiagram-v2
+    [*] --> INIT
+    INIT --> PLAN: Load Contract & Check Out Base
+    
+    PLAN --> IMPLEMENT: Orthogonal Lanes Defined
+    
+    state IMPLEMENT {
+        [*] --> Worktree_Lane_1
+        [*] --> Worktree_Lane_2
+        Worktree_Lane_1 --> Merge_Lanes
+        Worktree_Lane_2 --> Merge_Lanes
+    }
+    
+    IMPLEMENT --> INSPECT: Parallel Workers Complete
+    INSPECT --> INTEGRATE: Containment & Drift Checks Pass
+    INSPECT --> BLOCKED_SAFETY: Path Violation / Drift Detected
+    
+    INTEGRATE --> GATES: Merge into Integration Branch
+    GATES --> REVIEW: Deterministic Gates Pass (Tests/Lints)
+    GATES --> BLOCKED_GATE: Mechanical Gate Failure
+    
+    REVIEW --> JUDGE: Adversarial Audit Done
+    
+    state JUDGE_DECISION <<choice>>
+    JUDGE --> JUDGE_DECISION
+    
+    JUDGE_DECISION --> POLISH: No Blocking Claims (Clean Candidate)
+    JUDGE_DECISION --> PLAN_FIX: Blocking Defects Present (Wave N+1)
+    JUDGE_DECISION --> BLOCKED_CONVERGENCE: Defect Count Stalled / Oscillating
+    JUDGE_DECISION --> BLOCKED_ARCHITECTURE: REDESIGN Verdict Issued
+    
+    PLAN_FIX --> IMPLEMENT: Coalesce Overlaps & Re-slice Lanes
+    
+    POLISH --> DELIVER: Final Verification
+    DELIVER --> READY: Rebase on Target Branch & Clean Worktrees
+    READY --> [*]
+```
+
+### The Iron Law of Convergence: $E_n < \min(E_0 \dots E_{n-1})$
+To prevent endless loops, fix waves are allowed **only if the number of blocking defects strictly decreases compared to the best historical round**. If an agent oscillates ($3 \to 1 \to 2$ defects), the engine immediately halts with `BLOCKED_CONVERGENCE` for human triage.
 
 ---
 
@@ -115,23 +164,27 @@ Role chains seamlessly cascade across multiple LLM providers (AGY/Gemini, Codex/
 
 ### 1. Build and Install (Rust)
 
-Gauntlet is available as a blazing-fast, zero-unwrap, crash-resilient native Rust binary:
+Gauntlet is built in production-grade, zero-panic Rust with 100% typed error handling:
 
 ```bash
 # Build release binary
 cargo build --release --manifest-path rust/Cargo.toml
 
-# Install locally
+# Install to your PATH
 cargo install --path rust
 ```
 
-*(Alternatively, run directly with Python 3.11+: `./gauntlet <mission.md>`)*
+*(Alternatively, run the Python 3.11+ engine directly: `./gauntlet <mission.md>`)*
+
+---
 
 ### 2. Write a Mission Contract (`missions/my-feature.md`)
 
+A Gauntlet mission combines TOML frontmatter (mechanical rules & lanes) and Markdown (human contracts):
+
 ```markdown
 +++
-slug = "my-feature"
+slug = "cache-service"
 
 [[repos]]
 path = "."
@@ -143,133 +196,102 @@ gates = [
 
 [[lanes]]
 id = "L1"
-owns = ["src/core/**", "tests/test_core.rs"]
+owns = ["src/cache/**", "tests/test_cache.rs"]
 forbidden = ["src/api/**"]
-tests = ["cargo test --test test_core"]
-brief = "Implement core data structures and boundary validation."
+tests = ["cargo test --test test_cache"]
+brief = "Implement bounded LRU cache with eviction logic."
+
+[[lanes]]
+id = "L2"
+owns = ["src/api/**", "tests/test_api.rs"]
+forbidden = ["src/cache/**"]
+tests = ["cargo test --test test_api"]
+brief = "Expose cache endpoints over HTTP."
 +++
 
-# Objective
-Implement high-throughput transaction cache with bounded memory eviction.
+# Mission Objective
+Implement the cache service and REST endpoints with zero regressions.
 
 ## Acceptance Criteria (AC)
-- AC-1: Cache supports O(1) reads and writes up to 100k items.
-- AC-2: Exceeding capacity triggers LRU eviction without deadlocks.
+- AC-1: Cache supports O(1) concurrent get/put operations.
+- AC-2: Eviction policy triggers deterministically when capacity is reached.
 
-## Invariants (INV)
-- INV-1: Zero unsafe blocks or unwrap() in production code.
-- INV-2: Full thread-safety under high concurrency.
+## Invariants (INV) - Inviolable Rules
+- INV-1: Zero unwrap(), expect(), or panic! in production code.
+- INV-2: Full thread safety under high concurrency.
 
 ## Non-Goals (NG)
-- NG-1: Network clustering or distributed persistence.
-```
-
-### 3. Run the Gauntlet
-
-```bash
-# 1. Validate syntax and lane orthogonality without executing
-gauntlet --dry-run missions/my-feature.md
-
-# 2. Run with Super-Auto Pareto optimization
-gauntlet --profile auto missions/my-feature.md
-
-# 3. Or run with pure AGY / Gemini 3.7 Flash High
-gauntlet --config gauntlet.agy.toml missions/my-feature.md
+- NG-1: Distributed Redis/Memcached clustering.
 ```
 
 ---
 
-## 🛠️ CLI Options
+### 3. Run the Gauntlet
 
-| Flag | Description |
-| :--- | :--- |
-| `--profile {auto,fast,standard,high-risk}` | Auto-tunes reasoning depth and model selection based on contract risk. |
-| `--config FILE` | Overrides configuration with custom TOML routing (e.g. `gauntlet.agy.toml`). |
-| `--auto` *(default)* | Runs unattended, auto-approving director checkpoints. |
-| `--interactive` | Pauses for human confirmation at `PLAN` and `DELIVERY` checkpoints. |
-| `--resume RUN_DIR` | Resumes an interrupted run directly from its `.missions/<run>/state.json`. |
-| `--dry-run` | Prints all planned worktrees, git operations, and harness capsules without mutating git. |
-| `--no-color` | Disables ANSI colors and interactive spinners (CI/CD friendly). |
+```bash
+# 1. Dry run: Verify lane orthogonality and worktree allocation without modifying git
+gauntlet --dry-run missions/my-feature.md
+
+# 2. Super-Auto mode: Intelligent Pareto routing based on mission risk
+gauntlet --profile auto missions/my-feature.md
+
+# 3. Pure AGY mode: Run all roles via Gemini 3.7 Flash High
+gauntlet --config gauntlet.agy.toml missions/my-feature.md
+
+# 4. Interactive mode: Pauses for human confirmation at key milestones
+gauntlet --interactive missions/my-feature.md
+```
 
 ---
 
 ## 🤖 Skills Integration
 
-Gauntlet Engine includes two first-class agent skills for Antigravity, Claude Code, Cursor, and Reasonix:
+Gauntlet Engine includes two dedicated skills for agentic IDEs (**Antigravity, Claude Code, Cursor, Reasonix**):
 
-| Skill | Directory | Purpose |
-| :--- | :--- | :--- |
-| **`gauntlet-architect`** | `skills/gauntlet-architect/` | Explores the codebase, analyzes blast radius, drafts invariant contracts, and partitions orthogonal lanes. |
-| **`gauntlet-pilot`** | `skills/gauntlet-pilot/` | Supervises autonomous execution, manages checkpoints, monitors convergence, and handles triage. |
+```
+.agents/skills/
+├── gauntlet-architect/    # Slices contracts, defines blast radius, partitions orthogonal lanes
+└── gauntlet-pilot/        # Supervises execution, manages checkpoints, handles triage & delivery
+```
 
-### Installing Skills
-To install in your local agent environment:
+### Install in your Agent environment
 ```bash
 mkdir -p ~/.agents/skills
 cp -r skills/gauntlet-architect ~/.agents/skills/
 cp -r skills/gauntlet-pilot ~/.agents/skills/
 ```
 
+- **Invoke `gauntlet-architect`**: When you have an idea, PRD, or feature request and want a formal, orthogonal mission contract created.
+- **Invoke `gauntlet-pilot`**: When you want the agent to execute, supervise, monitor, and deliver a mission into your repository.
+
 ---
 
 ## ⚙️ Configuration & Profiles
 
-Gauntlet resolves configuration via deep recursive merge:
-1. **Built-in Defaults** (embedded in the binary)
+Gauntlet merges configuration in the following order:
+1. **Built-in Defaults** (embedded in the engine)
 2. **Project Config**: `./gauntlet.toml`
 3. **Mission Config**: `<mission_dir>/gauntlet.toml`
 4. **CLI Flag**: `--config <custom.toml>`
 
-### Example: Pure AGY High-Throughput Routing (`gauntlet.agy.toml`)
-```toml
-[harnesses.agy]
-adapter = "agy"
-supports_write = true
-default_model = "gemini-3.7-flash-high"
-launcher = "agy-delegate"
-
-[roles.implementer]
-chain = [{ harness = "agy", model = "gemini-3.7-flash-high", effort = "high" }]
-
-[roles.reviewer]
-chain = [{ harness = "agy", model = "gemini-3.7-flash-high", effort = "high" }]
-
-[roles.judge]
-chain = [{ harness = "agy", model = "gemini-3.7-flash-high", effort = "high" }]
-
-[policy]
-max_total_waves = 5
-on_wave_cap = "checkpoint"
-```
+### Ready-to-use Configurations:
+- **`gauntlet.toml`**: Multi-harness setup combining AGY, Codex GPT-5.6, CMD, and Kimi K3.
+- **`gauntlet.agy.toml`**: High-throughput configuration running 100% on AGY (Gemini 3.7 Flash High).
 
 ---
 
-## 🧪 Rigorous Verification & Safety
+## 🧪 Safety & Test Suite
 
-Gauntlet is engineered to high-assurance standards:
-- **Zero-Unwrap Codebase**: 100% of production Rust code (`rust/src/`) is free from `unwrap()`, `expect()`, `panic!`, and unsafe string/array slicing.
-- **Poison-Resilient Mutexes**: Seamless recovery from concurrent thread panics.
-- **Dual Test Suite**:
-  - **136 Rust Unit & Integration Tests**: State machine, worktree isolation, glob engines, circuit-breakers.
-  - **141 Python Unit Tests**: Cross-validation of protocol invariants.
-  - **0 Clippy Warnings** (`--all-targets -- -D warnings`).
-
-Run the full verification suite:
-```bash
-# Test Rust Engine
-cargo test --manifest-path rust/Cargo.toml
-cargo clippy --manifest-path rust/Cargo.toml --all-targets -- -D warnings
-
-# Test Python Engine
-python3 -m unittest discover -s tests -v
-```
+Gauntlet Engine is tested to the highest assurance standards:
+- **0 `unwrap()` / `expect()` / `panic!`** in all non-test Rust modules.
+- **Poison-Resilient Mutexes**: Thread locks automatically recover from poisoned states.
+- **277 Tests Passed (0 Failures)**:
+  - 136 Rust unit and integration tests.
+  - 141 Python unit tests.
+  - Clean Clippy check (`--all-targets -- -D warnings`).
 
 ---
 
 ## 📄 License
 
-Dual-licensed under either of:
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
-- MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
-
-at your option.
+Dual-licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or [MIT License](LICENSE-MIT) at your option.
