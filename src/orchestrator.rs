@@ -350,7 +350,11 @@ impl Orchestrator {
                 adapter: Some(hcfg.adapter.clone()),
                 supports_write: Some(hcfg.supports_write),
                 default_model: hcfg.default_model.clone(),
-                launcher: None,
+                launcher: hcfg
+                    .extra
+                    .get("launcher")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
                 errors: error_pats,
             };
 
@@ -455,6 +459,9 @@ impl Orchestrator {
     }
 
     pub fn _save(&mut self) -> Result<(), GauntletError> {
+        if self.dry_run {
+            return Ok(());
+        }
         let _guard = self.state_lock.lock().unwrap_or_else(|p| p.into_inner());
         self.state.harness_health = self.health.snapshot();
         if self.state.run_dir.is_some() {
