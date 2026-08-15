@@ -72,12 +72,49 @@ pub fn run_gates(
         let log_path = out_dir.join(format!("gate-{idx}.log"));
         let t0 = Instant::now();
 
+        let log_file = match fs::File::create(&log_path) {
+            Ok(f) => f,
+            Err(e) => {
+                let dur = t0.elapsed().as_secs_f64();
+                let detail = format!("failed to create gate log file: {e}");
+                if let Some(cb) = ui_callback {
+                    cb(gate_num, total, command, false, dur, &detail);
+                }
+                results.push(GateResult::new(
+                    command.clone(),
+                    false,
+                    None,
+                    Some(log_path),
+                    detail,
+                ));
+                continue;
+            }
+        };
+        let err_file = match log_file.try_clone() {
+            Ok(f) => f,
+            Err(_) => {
+                let dur = t0.elapsed().as_secs_f64();
+                let detail = "failed to clone log file handle".to_string();
+                if let Some(cb) = ui_callback {
+                    cb(gate_num, total, command, false, dur, &detail);
+                }
+                results.push(GateResult::new(
+                    command.clone(),
+                    false,
+                    None,
+                    Some(log_path),
+                    detail,
+                ));
+                continue;
+            }
+        };
+
         let mut child = match Command::new("bash")
             .arg("-c")
             .arg(command)
             .current_dir(cwd)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stdout(Stdio::from(log_file))
+            .stderr(Stdio::from(err_file))
             .spawn()
         {
             Ok(c) => c,
@@ -126,7 +163,10 @@ pub fn run_gates(
         let dur = t0.elapsed().as_secs_f64();
 
         if timed_out || status.is_none() {
-            let _ = fs::write(&log_path, format!("gate timed out after {timeout_s}s\n"));
+            let _ = fs::OpenOptions::new().append(true).open(&log_path).map(|mut f| {
+                use std::io::Write;
+                let _ = writeln!(f, "gate timed out after {timeout_s}s");
+            });
             let detail = format!("timeout after {timeout_s}s");
             if let Some(cb) = ui_callback {
                 cb(gate_num, total, command, false, dur, &detail);
@@ -139,30 +179,16 @@ pub fn run_gates(
                 detail,
             ));
         } else if let Some(exit_status) = status {
-            let mut stdout_buf = Vec::new();
-            let mut stderr_buf = Vec::new();
-
-            if let Some(mut out) = child.stdout.take() {
-                use std::io::Read;
-                let _ = out.read_to_end(&mut stdout_buf);
-            }
-            if let Some(mut err) = child.stderr.take() {
-                use std::io::Read;
-                let _ = err.read_to_end(&mut stderr_buf);
-            }
-
-            let stdout_str = String::from_utf8_lossy(&stdout_buf);
-            let stderr_str = String::from_utf8_lossy(&stderr_buf);
-            let combined = format!("{stdout_str}{stderr_str}");
-            let _ = fs::write(&log_path, combined);
-
             let ok = exit_status.success();
             let returncode = exit_status.code();
-            let detail = if !ok && !stderr_str.trim().is_empty() {
-                stderr_str.trim().lines().last().unwrap_or("").to_string()
-            } else {
-                String::new()
-            };
+            let mut detail = String::new();
+            if !ok {
+                if let Ok(content) = fs::read_to_string(&log_path) {
+                    if let Some(last_line) = content.trim().lines().last() {
+                        detail = last_line.to_string();
+                    }
+                }
+            }
 
             if let Some(cb) = ui_callback {
                 cb(gate_num, total, command, ok, dur, &detail);
