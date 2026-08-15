@@ -226,9 +226,26 @@ impl Orchestrator {
 
         let (mission, config, state, run_dir, report, profile_info) = if let Some(r_dir) = resume_dir {
             let run_dir = r_dir.to_path_buf();
-            let state = load(&run_dir).map_err(|e| GauntletError::blocked(e.to_string()))?;
+            let mut state = load(&run_dir).map_err(|e| GauntletError::blocked(e.to_string()))?;
             let mission = load_mission(&run_dir.join("mission.md"))
                 .map_err(|e| GauntletError::blocked(e.to_string()))?;
+            if BLOCKED_TERMINALS.contains(&state.phase.as_str()) {
+                if let Some(ref bp) = state.blocked_phase {
+                    state.phase = bp.clone();
+                } else {
+                    state.phase = "INIT".to_string();
+                }
+                for lane in &mut state.lanes {
+                    if lane.status == "rejected" {
+                        lane.status = "done".to_string();
+                        lane.detail = String::new();
+                    }
+                    if let Some(m_lane) = mission.lanes.iter().find(|l| l.id == lane.id) {
+                        lane.owns = m_lane.owns.clone();
+                        lane.forbidden = m_lane.forbidden.clone();
+                    }
+                }
+            }
             let mut cfg_table = load_config_table(None, None, Some(&run_dir.join("config.toml")))?;
             if let Some(cp) = config_path {
                 let extra_table = load_config_table(None, None, Some(cp))?;
@@ -1510,22 +1527,35 @@ impl Orchestrator {
         }
 
         let symlinks = self.worktree_symlinks();
+        let base_for_wave = if self.state.wave == 0 {
+            self.state.base_commit.clone()
+        } else {
+            self.integration_branch()
+        };
+
         // Provision lane worktrees serially
         for &idx in &todo_indices {
             let lane = &self.state.lanes[idx];
             let wt = self.lane_wt(&lane.id);
             let branch = self.lane_branch(&lane.id);
-            if !wt.exists() {
-                create_worktree(
-                    &self.git,
-                    &self.repo_path(),
-                    &wt,
-                    &branch,
-                    &self.state.base_commit,
-                    &symlinks,
-                )?;
-            } else {
-                ensure_symlinks(&self.repo_path(), &wt, &symlinks);
+            if !self.dry_run {
+                if !wt.exists() {
+                    create_worktree(
+                        &self.git,
+                        &self.repo_path(),
+                        &wt,
+                        &branch,
+                        &base_for_wave,
+                        &symlinks,
+                    )?;
+                } else {
+                    if self.state.wave > 0 {
+                        let _ = self.git.run(&["checkout", "-B", &branch, &base_for_wave], Some(&wt), true, true);
+                        let _ = self.git.run(&["reset", "--hard", &base_for_wave], Some(&wt), true, true);
+                        let _ = self.git.run(&["clean", "-fd"], Some(&wt), true, true);
+                    }
+                    ensure_symlinks(&self.repo_path(), &wt, &symlinks);
+                }
             }
             let wt_str = wt.to_string_lossy().to_string();
             if !self.state.worktrees.contains(&wt_str) {
@@ -1785,7 +1815,7 @@ impl Orchestrator {
         }
 
         let current_checkout = checkout_status(&self.git, &self.repo_path())?;
-        let drift = checkout_drift(&self.main_before, &current_checkout, Some(&[".missions/"]));
+        let drift = checkout_drift(&self.main_before, &current_checkout, Some(&[".missions/", "_missions/"]));
         if !drift.is_empty() {
             return Err(GauntletError::blocked(format!(
                 "SAFETY: main checkout modified while lanes ran (worker escaped its worktree): {}",
@@ -1813,7 +1843,12 @@ impl Orchestrator {
             lane.changed = lane_changed_files(&self.git, &wt, &base)?;
 
             let mut violations = check_lane_diff(&lane.changed, &lane.owns, &lane.forbidden);
-            violations.extend(check_claimed_vs_diff(&lane.claimed, &lane.changed));
+            let full_changed = if self.state.wave > 0 {
+                lane_changed_files(&self.git, &wt, &self.state.base_commit).unwrap_or_else(|_| lane.changed.clone())
+            } else {
+                lane.changed.clone()
+            };
+            violations.extend(check_claimed_vs_diff(&lane.claimed, &full_changed));
 
             if !violations.is_empty() && self.config.policy.on_blocked == "auto_heal" {
                 let unowned: Vec<String> = lane
@@ -2079,7 +2114,7 @@ impl Orchestrator {
         }
 
         let wt = self.integration_wt();
-        let diff = if wt.is_dir() {
+        let diff = if wt.is_dir() && !self.dry_run {
             self.git
                 .run(&["diff", &self.state.base_commit], Some(&wt), false, true)?
                 .unwrap_or_else(|| "(empty diff)\n".to_string())
@@ -2560,7 +2595,7 @@ impl Orchestrator {
         };
 
         let current = checkout_status(&self.git, &self.repo_path())?;
-        let drift = checkout_drift(&before, &current, Some(&[".missions/"]));
+        let drift = checkout_drift(&before, &current, Some(&[".missions/", "_missions/"]));
         if !drift.is_empty() {
             return Err(GauntletError::blocked(format!(
                 "SAFETY: main checkout modified during the polish pass: {}",
@@ -2687,8 +2722,10 @@ impl Orchestrator {
                 }
             }
 
-            let symlinks = self.worktree_symlinks();
-            ensure_symlinks(&repo, &self.integration_wt(), &symlinks);
+            if !self.dry_run {
+                let symlinks = self.worktree_symlinks();
+                ensure_symlinks(&repo, &self.integration_wt(), &symlinks);
+            }
 
             let out_dir = self
                 .run_dir

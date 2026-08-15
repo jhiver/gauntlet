@@ -48,6 +48,10 @@ impl CmdAdapter {
             argv.push("--effort".to_string());
             argv.push(e.to_string());
         }
+        if let Some(parent) = capsule.parent() {
+            argv.push("--add-dir".to_string());
+            argv.push(parent.display().to_string());
+        }
         if write {
             argv.push("--yolo".to_string());
         } else {
