@@ -78,14 +78,14 @@ flowchart TD
     style D fill:#065f46,stroke:#34d399,stroke-width:2px,color:#ffffff
 ```
 
-| Role | Access | Responsibility | Key Output Block |
-| :--- | :--- | :--- | :--- |
-| **`planner`** | Read-Only | Analyzes objectives, Acceptance Criteria (AC), Invariants (INV), and defines disjoint `owns` file scopes. | ```` ```gauntlet-plan ```` |
-| **`implementer`** | Write (Worktree) | Writes code and local tests strictly within the assigned Git worktree. | ```` ```gauntlet-report ```` |
-| **`reviewer`** | Read-Only | Performs adversarial code audit against Acceptance Criteria and Invariants. | ```` ```gauntlet-verdict ```` |
-| **`judge`** | Read-Only | Groups findings by root cause, discards style nitpicks, determines blocking defects. | ```` ```gauntlet-verdict ```` |
-| **`fixer`** | Write (Worktree) | Resolves validated blocking defects in a fresh, isolated fix worktree. | ```` ```gauntlet-report ```` |
-| **`director`** | Human / Agent | Supervises milestones, reviews architectural redesign proposals, approves deliveries. | Interactive CLI / Checkpoints |
+| Role | Access | Responsibility |
+| :--- | :--- | :--- |
+| **`planner`** | Read-Only | Analyzes objectives, Acceptance Criteria (AC), Invariants (INV), and defines disjoint `owns` file scopes. |
+| **`implementer`** | Write (Worktree) | Writes code and local tests strictly within the assigned Git worktree. |
+| **`reviewer`** | Read-Only | Performs adversarial code audit against Acceptance Criteria and Invariants. |
+| **`judge`** | Read-Only | Groups findings by root cause, discards style nitpicks, determines blocking defects. |
+| **`fixer`** | Write (Worktree) | Resolves validated blocking defects in a fresh, isolated fix worktree. |
+| **`director`** | Human / Agent | Supervises milestones, reviews architectural redesign proposals, approves deliveries. |
 
 ---
 
@@ -134,11 +134,11 @@ flowchart LR
 
 | Role | Primary Harness & Model | Secondary Failover | Tertiary Failover | Rationale & Capability Profile |
 | :--- | :--- | :--- | :--- | :--- |
-| **`planner`** | `agy` : `gemini-3.7-flash` | `cmd` : `claude-sonnet-5` | `codex` : `gpt-5.6-sol` | High context window & rapid contract slicing into disjoint file globs |
-| **`implementer`** | `agy` : `gemini-3.7-flash` | `cmd` : `claude-sonnet-5` | `cmd` : `gpt-5.6-luna` | Maximum throughput in parallel worktrees with zero latency |
-| **`reviewer`** | `cmd` : `claude-sonnet-5` | `codex` : `gpt-5.6-sol` (`high`) | `kimi` : `kimi-k3` | Zero-sycophancy adversarial code audit against Acceptance Criteria & Invariants |
-| **`judge`** | `codex` : `gpt-5.6-sol` (`xhigh`) | `cmd` : `claude-sonnet-5` | `cmd` : `deepseek-v4-pro` | Strict propositional logic, root-cause deduplication & defect filtering |
-| **`fixer`** | `cmd` : `claude-sonnet-5` | `agy` : `gemini-3.7-flash` | `codex` : `gpt-5.6-sol` | High-precision surgical repairs on validated root causes in isolated lanes |
+| **`planner`** | `kimi` : `kimi-k3` | `cmd` : `xai/grok-4.6` | `codex` : `gpt-5.6-sol` (`high`) | Deep architectural reasoning & massive context to slice problems into orthogonal lanes |
+| **`implementer`** | `agy` : `gemini-3.7-flash` | `cmd` : `deepseek-v4-flash` | `cmd` : `claude-sonnet-5` | High-velocity code generation in parallel worktrees with minimal token latency |
+| **`reviewer`** | `cmd` : `xai/grok-4.6` | `kimi` : `kimi-k3` | `codex` : `gpt-5.6-sol` (`high`) | Relentless adversarial code audit against Acceptance Criteria & Invariants; zero bias |
+| **`judge`** | `codex` : `gpt-5.6-sol` (`xhigh`) | `cmd` : `claude-sonnet-5` | `cmd` : `deepseek-v4-pro` | Strict propositional logic, root-cause deduplication & non-actionable claim triage |
+| **`fixer`** | `cmd` : `claude-sonnet-5` | `agy` : `gemini-3.7-flash` | `cmd` : `deepseek-v4-flash` | High-precision surgical repairs on validated root causes in isolated fix lanes |
 | **`director`** | `human` : Interactive Console | — | — | Human checkpoint for redesign approvals & final delivery authorization |
 
 ---
